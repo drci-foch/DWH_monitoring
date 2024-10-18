@@ -1,7 +1,7 @@
 TODO LIST :
 SUR CHAQUE GRAPH LIGNE ROUGE MEDIANE
 
-SUMMARY : 
+ONGLET SUMMARY : 
 Nombre de patients : 
 - Patients qui ont double identifiants
 - Récupérer le nombre de patients avec TEST dedans Enlever les patients TEST si y’en a bcp
@@ -9,7 +9,7 @@ Nombre de patients :
 - Insecte : on enlève parce qu’on a tjr un doublon
 - Ajouter le Différentiel entre INSEE et décès Foch (Q1,Q2,Q3,Q4)
 
-Data Quality Metrics : 
+ONGLET Data Quality Metrics : 
 Test pour vérifier les dates : 
 Nom du fichier : 51341da6-9546-473e-a3c0-3a3d71480dcb
 FOUSSEREAU ANA
@@ -30,25 +30,25 @@ Graphique : Nbr de documents de chaques sources par mois sur l’année en cours
 2. Nombre de documents à supprimer de chaque source
 
 
-RDV Doctolib : 
+ONGLET RDV Doctolib : 
 - Monitorer l’activité de chaque service en rétrospectif
 - Accès à la base powerstay -> peut être sur easily
 
 ￼
 
-Monitoring Mouvement & Séjours:
+ONGLET Monitoring Mouvement & Séjours:
 Structuré, est ce que c’est bien importé ou pas?
 Graphique linéaire sur mouvement & séjour
 % manquant % aberrant
 
 
-PMSI : 
+ONGLET PMSI : 
 Date de dernier upload
 Période de temps concerné
 + savoir s’il y a des trous => graph linéaire en compte les dates des documents PMSI (pas upload, création)
 
 
-Users : 
+ONGLET Users : 
 - Ajouter le service à côté des prénoms des users.
 - Je regroupe tous les gens CODOC pour avoir une ligne des requêtes de CODOC
 admin admin
@@ -75,5 +75,5 @@ Charlotte Monthéan
 Est ce qu’on veut monitorer l’activité qualité du DIM ? 
 
 
-Faisabilité :
+ONGLET Faisabilité :
 Cohorte avec le code EASYDORE, à mettre en place pas pour tout de suite

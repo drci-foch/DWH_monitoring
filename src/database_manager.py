@@ -1,8 +1,6 @@
-import pyodbc
 import logging
 import oracledb
-from typing import List, Tuple, Any
-from lock_parameters import database_oracle, username_oracle, password_oracle, hostname_oracle, port_oracle, service_name_oracle
+from lock_parameters import username_oracle, password_oracle, hostname_oracle, port_oracle, service_name_oracle
 
 logger = logging.getLogger(__name__)
 
@@ -15,23 +13,14 @@ class DatabaseManager:
         }
         self.connection = None
 
-    def connect_to_db(self):
-        try:
-            conn = pyodbc.connect(self.connection_string)
-            return conn
-        except pyodbc.Error as e:
-            logger.error(f"Database connection error: {e}")
-            print("Unable to connect to the database. Please try again later.")
-            return None
-       
     def connect(self):
-        try:
-            self.connection = oracledb.connect(**self.oracle_connection_params)
-            logger.info("Connected to Oracle database")
-        except oracledb.Error as e:
-            logger.error(f"Oracle database connection error: {e}")
-            print("Unable to connect to the Oracle database. Please try again later.")
-            raise
+        if self.connection is None or not self.connection.is_healthy():
+            try:
+                self.connection = oracledb.connect(**self.oracle_connection_params)
+                logger.info("Connected to Oracle database")
+            except oracledb.Error as e:
+                logger.error(f"Oracle database connection error: {e}")
+                raise
 
     def disconnect(self):
         if self.connection:
@@ -40,7 +29,13 @@ class DatabaseManager:
                 logger.info("Disconnected from Oracle database")
             except oracledb.Error as e:
                 logger.error(f"Error closing database connection: {e}")
-       
+            finally:
+                self.connection = None
+
+    def get_connection(self):
+        self.connect()
+        return self.connection
+
     def __enter__(self):
         self.connect()
         return self
