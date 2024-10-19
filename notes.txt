@@ -1,79 +1,84 @@
-TODO LIST :
-SUR CHAQUE GRAPH LIGNE ROUGE MEDIANE
+# TODO List
 
-ONGLET SUMMARY : 
-Nombre de patients : 
-- Patients qui ont double identifiants
-- Récupérer le nombre de patients avec TEST dedans Enlever les patients TEST si y’en a bcp
-- Sur les Fleur : on garde, c’est les enfants nés sous X qui sont concerné en doublons. très rare.
-- Insecte : on enlève parce qu’on a tjr un doublon
-- Ajouter le Différentiel entre INSEE et décès Foch (Q1,Q2,Q3,Q4)
+Version: 1.0
+Last Updated: 2024-03-03
 
-ONGLET Data Quality Metrics : 
-Test pour vérifier les dates : 
-Nom du fichier : 51341da6-9546-473e-a3c0-3a3d71480dcb
-FOUSSEREAU ANA
-0300714051
-Créer le 20/07/2023
-Modifié le 21/07/2023
-Quel est la date qu’ils considèrent comme DOCUMENT_DATE ?
+## Status Legend
+- [ ] Not Started
+- [/] In Progress
+- [x] Done
 
-Reupload : est ce que c’est bien le dernier doc validé ?
-Pareil pour la bio
+## GENERAL IMPROVEMENTS
+- [x] Add red median line to each graph
 
-INDICATEURS A AJOUTER :
-Graphique : Nbr de documents de chaques sources par mois sur l’année en cours
-￼
- + EFR
+## SUMMARY TAB
+- [x] Number of patients:
+  - [x] Patients with double identifiers
+  - [x] Retrieve number of patients with "TEST" in their name
+  - [x] Remove TEST patients if there are many
+  - [x] Keep "Fleur" patients (rare cases of children born under X)
+  - [x] Remove "Insecte" patients (always a duplicate)
+  - [ ] Add differential between INSEE and Foch deaths (Q1, Q2, Q3, Q4)
 
-1. La période d’archive actuel (alerte avec +20ans)
-2. Nombre de documents à supprimer de chaque source
+## DATA QUALITY METRICS TAB
+- [ ] Test to verify dates:
+  - [ ] File: 51341da6-9546-473e-a3c0-3a3d71480dcb
+  - [ ] FOUSSEREAU ANA
+  - [ ] 0300714051
+  - [ ] Created on 20/07/2023
+  - [ ] Modified on 21/07/2023
+  - [ ] Determine which date is considered as DOCUMENT_DATE
+- [ ] Verify if reupload is the last validated document
+- [ ] Same verification for bio
 
+## NEW INDICATORS TO ADD
+- [x] Graph: Number of documents from each source per month for the current year
+- [x] Add EFR to the graph
+- [x] Current archive period (alert for +20 years)
+- [x] Number of documents to delete from each source
 
-ONGLET RDV Doctolib : 
-- Monitorer l’activité de chaque service en rétrospectif
-- Accès à la base powerstay -> peut être sur easily
+## RDV DOCTOLIB TAB
+- [ ] Monitor activity of each service retrospectively
+- [ ] Access to powerstay database (possibly on easily)
 
-￼
+## MOVEMENT & STAYS MONITORING TAB
+- [ ] Verify if structured data is properly imported
+- [ ] Linear graph on movement & stays
+- [ ] % missing and % aberrant
 
-ONGLET Monitoring Mouvement & Séjours:
-Structuré, est ce que c’est bien importé ou pas?
-Graphique linéaire sur mouvement & séjour
-% manquant % aberrant
+## PMSI TAB
+- [ ] Date of last upload
+- [ ] Time period concerned
+- [ ] Identify gaps (linear graph counting PMSI document creation dates, not upload)
 
+## USERS TAB
+- [ ] Add service next to user names
+- [ ] Group all CODOC people to have a line of CODOC queries
+- [ ] List of users to group:
+  - admin admin
+  - admin2 admin2
+  - Demo Nicolas
+  - ADMIN_ANONYM
+  - Fannie Lothaire
+  - Nicolas Garcelon
+  - codon admin
+  - codoc support
+  - Virgin Bitton
+  - Gabriel Silva
+  - Margaux Peschiera
+  - Antoine Motte
+  - Paul Montecot
+  - Julien Terver
+  - Thomas Pagoet
+  - Sofia Houriez--Gombaud-Saintonge
+  - Roxanne Schmidt
+  - Phillipe Fernandez
+  - Tanguy De Poix
+  - Charlotte Monthéan
+- [ ] Decide on monitoring DIM quality activity
 
-ONGLET PMSI : 
-Date de dernier upload
-Période de temps concerné
-+ savoir s’il y a des trous => graph linéaire en compte les dates des documents PMSI (pas upload, création)
+## FEASIBILITY TAB
+- [ ] Implement cohort with EASYDORE code (not immediate priority)
 
-
-ONGLET Users : 
-- Ajouter le service à côté des prénoms des users.
-- Je regroupe tous les gens CODOC pour avoir une ligne des requêtes de CODOC
-admin admin
-admin2 admin2
-Demo Nicolas
-ADMIN_ANONYM
-Fannie Lothaire
-Nicolas Garcelon
-codon admin
-codoc support
-Virgin Bitton
-Gabriel Silva
-Margaux Peschiera
-Antoine Motte
-Paul Montecot
-Julien Terver
-Thomas Pagoet
-Sofia Houriez--Gombaud-Saintonge
-Roxanne Schmidt
-Phillipe Fernandez
-Tanguy De Poix
-Charlotte Monthéan
-
-Est ce qu’on veut monitorer l’activité qualité du DIM ? 
-
-
-ONGLET Faisabilité :
-Cohorte avec le code EASYDORE, à mettre en place pas pour tout de suite
+## Version History
+- 1.0 (2024-03-03): Initial structured TODO list created
