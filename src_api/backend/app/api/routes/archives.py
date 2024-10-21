@@ -1,16 +1,9 @@
-from fastapi import APIRouter
-from app.core.db import engine
+from fastapi import APIRouter, Depends
 from app.crud import DatabaseQualityChecker
-
+from app.dependencies import get_db_checker
 
 router = APIRouter()
-db_checker = DatabaseQualityChecker(engine=engine)
 
 @router.get("/api/archive_status")
-async def get_archive_status():
-    all_stats = db_checker.get_all_statistics()
-    return {
-        "archive_period": all_stats['archive_period'],
-        "total_documents_to_suppress": all_stats['total_documents_to_suppress'][0][0],
-        "documents_to_suppress": all_stats['documents_to_suppress']
-    }
+async def get_archive_status(db_checker: DatabaseQualityChecker = Depends(get_db_checker)):
+    return await db_checker.get_archive_status()

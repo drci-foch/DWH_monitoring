@@ -53,8 +53,8 @@ Last Updated: 2024-03-03
 
 ## USERS TAB
 - [ ] Add service next to user names
-- [ ] Group all CODOC people to have a line of CODOC queries
-- [ ] List of users to group:
+- [X] Group all CODOC people to have a line of CODOC queries
+- [X] List of users to group:
   - admin admin
   - admin2 admin2
   - Demo Nicolas

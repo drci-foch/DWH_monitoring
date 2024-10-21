@@ -58,15 +58,8 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> PostgresDsn:
-        return MultiHostUrl.build(
-            scheme="oracle+oracledb",
-            username=self.DWH_USERNAME,
-            password=self.DWH_PASSWORD,
-            host=self.DWH_HOSTNAME,
-            port=self.DWH_PORT,
-            path=self.DWH_DATABASE,
-        )
-        # return f"oracle+oracledb://{self.DWH_USERNAME}:{self.DWH_PASSWORD}@{self.DWH_HOSTNAME}:{self.DWH_PORT}/?service_name={self.DWH_SERVICE_NAME}"
+
+        return f"oracle+oracledb://{self.DWH_USERNAME}:{self.DWH_PASSWORD}@{self.DWH_HOSTNAME}:{self.DWH_PORT}/?service_name={self.DWH_SERVICE_NAME}"
 
 
     
