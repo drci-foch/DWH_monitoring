@@ -126,51 +126,59 @@ def main():
     # Sources
 
 
-
     # Fetch document counts
-    doc_counts = fetch_data("/api/v1/documents/document_counts")
-
+    doc_counts = fetch_data("/sources/document_counts")
     if doc_counts:
         # Extract origin codes from doc_counts
         origin_codes = [item['document_origin_code'] for item in doc_counts]
         
-        selected_origin = st.selectbox("Select Document Origin", origin_codes)
+        selected_origins = st.multiselect("Select Document Origins", origin_codes, default=[origin_codes[0]])
         
-        st.subheader(f"Document Counts by Year - {selected_origin}")
-        doc_counts_by_year = fetch_data(f"/api/v1/documents/document_counts_by_year/{selected_origin}")
-        
-        if doc_counts_by_year:
-            df_doc_counts_by_year = pd.DataFrame(doc_counts_by_year)
-            safe_plot(lambda: px.line(df_doc_counts_by_year, x="year", y="count", title=f"Document Counts by Year - {selected_origin}"))
+        if selected_origins:
+            origin_codes_param = ",".join(selected_origins)
+            
+            st.subheader(f"Document Counts by Year")
+            doc_counts_by_year = fetch_data("/sources/document_counts_by_year", params={"origin_codes": origin_codes_param})
+            
+            if doc_counts_by_year:
+                df_doc_counts_by_year = pd.DataFrame(doc_counts_by_year)
+                fig = px.line(df_doc_counts_by_year, x="year", y="count", color="document_origin_code", title="Document Counts by Year")
+                fig.update_layout(legend_title_text="Document Origin")
+                st.plotly_chart(fig)
+            else:
+                st.warning(f"Document counts by year are not available.")
+            
+            st.subheader(f"Recent Document Counts by Month")
+            recent_doc_counts_by_month = fetch_data("/sources/recent_document_counts_by_month", params={"origin_codes": origin_codes_param})
+            
+            if recent_doc_counts_by_month:
+                df_recent_doc_counts_by_month = pd.DataFrame(recent_doc_counts_by_month)
+                df_recent_doc_counts_by_month['month'] = pd.to_datetime(df_recent_doc_counts_by_month['month'])
+                fig = px.line(df_recent_doc_counts_by_month, x="month", y="count", color="document_origin_code", title="Recent Document Counts by Month")
+                fig.update_layout(legend_title_text="Document Origin")
+                st.plotly_chart(fig)
+            else:
+                st.warning(f"Recent document counts by month are not available.")
         else:
-            st.warning(f"Document counts by year for {selected_origin} are not available.")
-        
-        st.subheader(f"Recent Document Counts by Month - {selected_origin}")
-        recent_doc_counts_by_month = fetch_data(f"/api/v1/documents/recent_document_counts_by_month/{selected_origin}")
-        
-        if recent_doc_counts_by_month:
-            df_recent_doc_counts_by_month = pd.DataFrame(recent_doc_counts_by_month)
-            safe_plot(lambda: px.line(df_recent_doc_counts_by_month, x="month", y="count", title=f"Recent Document Counts by Month - {selected_origin}"))
-        else:
-            st.warning(f"Recent document counts by month for {selected_origin} are not available.")
+            st.warning("Please select at least one document origin.")
     else:
         st.warning("Document sources data is not available.")
 
-    #     # Archives
-    #     st.header("Archive Status")
+        # Archives
+        st.header("Archive Status")
         
-    # archive_status = fetch_data("/archives/api/archive_status")
-    # if archive_status:
-    #     safe_metric_display("Archive Period (years)", lambda: f"{archive_status['archive_period']:.2f}")
-    #     safe_metric_display("Total Documents to Suppress", lambda: f"{archive_status['total_documents_to_suppress']:,}")
+    archive_status = fetch_data("/archives/api/archive_status")
+    if archive_status:
+        safe_metric_display("Archive Period (years)", lambda: f"{archive_status['archive_period']:.2f}")
+        safe_metric_display("Total Documents to Suppress", lambda: f"{archive_status['total_documents_to_suppress']:,}")
 
-    #     if 'documents_to_suppress' in archive_status:
-    #         df_docs_to_suppress = pd.DataFrame(archive_status['documents_to_suppress'], columns=["Origin", "Count"])
-    #         safe_plot(lambda: px.bar(df_docs_to_suppress, x="Origin", y="Count", title="Documents to Suppress by Origin"))
-    #     else:
-    #         st.warning("Documents to suppress data is not available.")
-    # else:
-    #     st.warning("Archive status data is not available.")
+        if 'documents_to_suppress' in archive_status:
+            df_docs_to_suppress = pd.DataFrame(archive_status['documents_to_suppress'], columns=["Origin", "Count"])
+            safe_plot(lambda: px.bar(df_docs_to_suppress, x="Origin", y="Count", title="Documents to Suppress by Origin"))
+        else:
+            st.warning("Documents to suppress data is not available.")
+    else:
+        st.warning("Archive status data is not available.")
 
 if __name__ == "__main__":
     main()

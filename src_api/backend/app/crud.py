@@ -3,7 +3,6 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
-
 from datetime import datetime
 import logging
 import asyncio
@@ -72,37 +71,60 @@ class DatabaseQualityChecker:
             return result[0][0] if result else 0
 
 
-    async def get_document_counts(self) -> List[Tuple[str, int]]:
+    async def get_document_counts(self) -> List[Dict[str, Any]]:
         query = """
         SELECT 
-            DOCUMENT_ORIGIN_CODE,
-            COUNT(DISTINCT DOCUMENT_NUM) as UNIQUE_DOCUMENT_COUNT
-        FROM 
-            DWH.DWH_DOCUMENT
+            GROUPED_ORIGIN,
+            SUM(UNIQUE_DOCUMENT_COUNT) as TOTAL_UNIQUE_DOCUMENT_COUNT
+        FROM (
+            SELECT 
+                CASE
+                    WHEN DOCUMENT_ORIGIN_CODE LIKE 'Easily%' THEN 'Easily'
+                    WHEN DOCUMENT_ORIGIN_CODE LIKE 'DOC_EXTERNE%' THEN 'DOC_EXTERNE'
+                    ELSE DOCUMENT_ORIGIN_CODE
+                END AS GROUPED_ORIGIN,
+                COUNT(DISTINCT DOCUMENT_NUM) as UNIQUE_DOCUMENT_COUNT
+            FROM 
+                DWH.DWH_DOCUMENT
+            GROUP BY 
+                DOCUMENT_ORIGIN_CODE
+        )
         GROUP BY 
-            DOCUMENT_ORIGIN_CODE
+            GROUPED_ORIGIN
         ORDER BY 
-            UNIQUE_DOCUMENT_COUNT DESC
+            TOTAL_UNIQUE_DOCUMENT_COUNT DESC
         """
         results = await self.execute_query(query)
         return [{"document_origin_code": row[0], "unique_document_count": row[1]} for row in results]
 
-    async def get_recent_document_counts(self) -> List[Tuple[str, int]]:
+    async def get_recent_document_counts(self) -> List[Dict[str, Any]]:
         query = """
         SELECT 
-            DOCUMENT_ORIGIN_CODE,
-            COUNT(DISTINCT DOCUMENT_NUM) as UNIQUE_DOCUMENT_COUNT
-        FROM 
-            DWH.DWH_DOCUMENT
-        WHERE 
-            UPDATE_DATE >= SYSDATE - 7
+            GROUPED_ORIGIN,
+            SUM(UNIQUE_DOCUMENT_COUNT) as TOTAL_UNIQUE_DOCUMENT_COUNT
+        FROM (
+            SELECT 
+                CASE
+                    WHEN DOCUMENT_ORIGIN_CODE LIKE 'Easily%' THEN 'Easily'
+                    WHEN DOCUMENT_ORIGIN_CODE LIKE 'DOC_EXTERNE%' THEN 'DOC_EXTERNE'
+                    ELSE DOCUMENT_ORIGIN_CODE
+                END AS GROUPED_ORIGIN,
+                COUNT(DISTINCT DOCUMENT_NUM) as UNIQUE_DOCUMENT_COUNT
+            FROM 
+                DWH.DWH_DOCUMENT
+            WHERE 
+                UPDATE_DATE >= SYSDATE - 7
+            GROUP BY 
+                DOCUMENT_ORIGIN_CODE
+        )
         GROUP BY 
-            DOCUMENT_ORIGIN_CODE
+            GROUPED_ORIGIN
         ORDER BY 
-            UNIQUE_DOCUMENT_COUNT DESC
+            TOTAL_UNIQUE_DOCUMENT_COUNT DESC
         """
         results = await self.execute_query(query)
         return [{"document_origin_code": row[0], "unique_document_count": row[1]} for row in results]
+
     
     async def get_top_users(self, current_year: bool = False) -> List[Dict[str, Any]]:
         codoc_users = (
@@ -225,26 +247,30 @@ class DatabaseQualityChecker:
             "documents_to_suppress": documents_to_suppress
         }
 
-    async def get_document_counts_by_year(self, origin_codes: List[str]) -> Dict[str, List[Tuple[int, int]]]:
-        query = """
-        SELECT 
+
+    async def get_document_counts_by_year(self, origin_codes: List[str]) -> List[Dict[str, Any]]:
+        placeholders = ', '.join(f':code{i}' for i in range(len(origin_codes)))
+        query = f"""
+        SELECT
             DOCUMENT_ORIGIN_CODE,
             EXTRACT(YEAR FROM UPDATE_DATE) AS YEAR,
             COUNT(DISTINCT DOCUMENT_NUM) as DOCUMENT_COUNT
-        FROM 
+        FROM
             DWH.DWH_DOCUMENT
-        WHERE 
-            DOCUMENT_ORIGIN_CODE IN :origin_codes
-        GROUP BY 
+        WHERE
+            DOCUMENT_ORIGIN_CODE IN ({placeholders})
+        GROUP BY
             DOCUMENT_ORIGIN_CODE, EXTRACT(YEAR FROM UPDATE_DATE)
-        ORDER BY 
+        ORDER BY
             DOCUMENT_ORIGIN_CODE, YEAR
         """
-        results = await self.execute_query(query, {"origin_codes": tuple(origin_codes)})
-        return {origin: [(r[1], r[2]) for r in results if r[0] == origin] for origin in origin_codes}
+        params = {f'code{i}': code for i, code in enumerate(origin_codes)}
+        results = await self.execute_query(query, params)
+        return [{"document_origin_code": row[0], "year": int(row[1]), "count": row[2]} for row in results]
 
-    async def get_recent_document_counts_by_month(self, origin_codes: List[str]) -> Dict[str, List[Tuple[datetime, int]]]:
-        query = """
+    async def get_recent_document_counts_by_month(self, origin_codes: List[str]) -> List[Dict[str, Any]]:
+        placeholders = ', '.join(f':code{i}' for i in range(len(origin_codes)))
+        query = f"""
         SELECT
             DOCUMENT_ORIGIN_CODE,
             TRUNC(DOCUMENT_DATE, 'MM') AS MONTH,
@@ -252,7 +278,7 @@ class DatabaseQualityChecker:
         FROM
             DWH.DWH_DOCUMENT
         WHERE
-            DOCUMENT_ORIGIN_CODE IN :origin_codes
+            DOCUMENT_ORIGIN_CODE IN ({placeholders})
             AND DOCUMENT_DATE >= ADD_MONTHS(TRUNC(SYSDATE, 'YYYY'), -11)
             AND DOCUMENT_DATE < ADD_MONTHS(TRUNC(SYSDATE, 'MM'), 1)
         GROUP BY
@@ -260,9 +286,10 @@ class DatabaseQualityChecker:
         ORDER BY
             DOCUMENT_ORIGIN_CODE, MONTH
         """
-        results = await self.execute_query(query, {"origin_codes": tuple(origin_codes)})
-        return {origin: [(r[1], r[2]) for r in results if r[0] == origin] for origin in origin_codes}
-
+        params = {f'code{i}': code for i, code in enumerate(origin_codes)}
+        results = await self.execute_query(query, params)
+        return [{"document_origin_code": row[0], "month": row[1].strftime("%Y-%m-%d") if row[1] else None, "count": row[2]} for row in results]
+    
     async def get_document_origins(self) -> List[str]:
         query = "SELECT DISTINCT DOCUMENT_ORIGIN_CODE FROM DWH.DWH_DOCUMENT"
         result = await self.execute_query(query)
