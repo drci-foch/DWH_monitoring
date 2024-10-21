@@ -123,11 +123,12 @@ def main():
                                 title="Recent Document Distribution by Origin"))
     else:
         st.warning("Recent document counts are not available.")
+        
     # Sources
-
+    st.header("Sources")
 
     # Fetch document counts
-    doc_counts = fetch_data("/sources/document_counts")
+    doc_counts = fetch_data("/documents/api/document_counts")
     if doc_counts:
         # Extract origin codes from doc_counts
         origin_codes = [item['document_origin_code'] for item in doc_counts]
@@ -138,7 +139,7 @@ def main():
             origin_codes_param = ",".join(selected_origins)
             
             st.subheader(f"Document Counts by Year")
-            doc_counts_by_year = fetch_data("/sources/document_counts_by_year", params={"origin_codes": origin_codes_param})
+            doc_counts_by_year = fetch_data(f"/sources/document_counts_by_year?origin_codes={origin_codes_param}")
             
             if doc_counts_by_year:
                 df_doc_counts_by_year = pd.DataFrame(doc_counts_by_year)
@@ -149,7 +150,7 @@ def main():
                 st.warning(f"Document counts by year are not available.")
             
             st.subheader(f"Recent Document Counts by Month")
-            recent_doc_counts_by_month = fetch_data("/sources/recent_document_counts_by_month", params={"origin_codes": origin_codes_param})
+            recent_doc_counts_by_month = fetch_data(f"api/v1/sources/recent_document_counts_by_month?origin_codes={origin_codes_param}")
             
             if recent_doc_counts_by_month:
                 df_recent_doc_counts_by_month = pd.DataFrame(recent_doc_counts_by_month)
@@ -169,14 +170,18 @@ def main():
         
     archive_status = fetch_data("/archives/api/archive_status")
     if archive_status:
-        safe_metric_display("Archive Period (years)", lambda: f"{archive_status['archive_period']:.2f}")
-        safe_metric_display("Total Documents to Suppress", lambda: f"{archive_status['total_documents_to_suppress']:,}")
+        col1, col2 = st.columns(2)
+        with col1:
+            safe_metric_display("Archive Period (years)", lambda: f"{archive_status['archive_period']:.2f}")
+        with col2:
+            safe_metric_display("Total Documents to Suppress", lambda: f"{archive_status['total_documents_to_suppress']:,}")
 
-        if 'documents_to_suppress' in archive_status:
+
+        if 'documents_to_suppress' in archive_status and archive_status['documents_to_suppress']:
             df_docs_to_suppress = pd.DataFrame(archive_status['documents_to_suppress'], columns=["Origin", "Count"])
             safe_plot(lambda: px.bar(df_docs_to_suppress, x="Origin", y="Count", title="Documents to Suppress by Origin"))
         else:
-            st.warning("Documents to suppress data is not available.")
+            print("No documents to suppress or 'documents_to_suppress' key not found in archive_status.")
     else:
         st.warning("Archive status data is not available.")
 
