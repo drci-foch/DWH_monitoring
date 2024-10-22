@@ -112,7 +112,7 @@ DWH_monitoring/
 
 2. Navigate to the frontend directory:
    ```
-   cd src/frontend/frontend/src/views/pages
+   cd src/frontend/src/views/pages
    ```
 
 3. Run the Streamlit app:
