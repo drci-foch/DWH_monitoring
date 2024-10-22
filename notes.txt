@@ -1,12 +1,18 @@
 # TODO List
 
 Version: 1.0
-Last Updated: 2024-03-03
+Last Updated: 2024-10-22
 
 ## Status Legend
 - [ ] Not Started
 - [/] In Progress
 - [x] Done
+
+
+## API DEVELOPEMENTS
+- [X] Develop FrontEnd 
+- [ ] Test and debug Frontend on real data
+- [ ] Test Optimized CRUD :: crud_to_test.py
 
 ## GENERAL IMPROVEMENTS
 - [x] Add red median line to each graph
@@ -79,6 +85,3 @@ Last Updated: 2024-03-03
 
 ## FEASIBILITY TAB
 - [ ] Implement cohort with EASYDORE code (not immediate priority)
-
-## Version History
-- 1.0 (2024-03-03): Initial structured TODO list created
