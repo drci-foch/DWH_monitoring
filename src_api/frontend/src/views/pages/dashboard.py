@@ -52,13 +52,47 @@ class Dashboard:
             if st.button("🔄 Actualiser les données", type="primary", use_container_width=True):
                 st.rerun()
                     
+            # with st.expander("À propos"):
+            #     st.write("""
+            #     Ce tableau de bord fournit une analyse en temps réel de la base de données, 
+            #     comprenant les indicateurs de qualité, les tendances d'utilisation, 
+            #     et la répartition des documents.
+            #     """)
+            
             with st.expander("À propos"):
-                st.write("""
-                Ce tableau de bord fournit une analyse en temps réel de la base de données, 
-                comprenant les indicateurs de qualité, les tendances d'utilisation, 
-                et la répartition des documents.
-                """)
+              st.markdown("""
+                ### Tableau de Bord de Monitoring EDS
                 
+                Ce tableau de bord fournit une analyse détaillée de l'Entrepôt de Données de Santé (EDS) avec les sections suivantes :
+                
+                #### 📊 Métriques Générales
+                - Nombre total de patients dans l'EDS
+                - Décompte des patients test, recherche et sensibles 
+                - Vue d'ensemble du volume documentaire
+                
+                #### 📑 Distribution des Documents
+                - Répartition par origine des documents
+                - Comparaison historique vs récent
+                - Analyse des tendances documentaires
+                
+                #### 📈 Monitoring des Connecteurs  
+                - Évolution annuelle du volume par connecteur
+                - Tendances mensuelles détaillées
+                - Performance des imports de données
+                
+                #### 👥 Activité Utilisateurs
+                - Top utilisateurs par nombre de requêtes
+                - Utilisation historique vs année en cours
+                - Répartition des accès
+                
+                #### 🗄️ Statut d'Archivage
+                - Période d'archivage globale
+                - Documents éligibles à l'archivage
+                - Distribution par type de document
+                
+                *Ce tableau de bord est mis à jour en temps réel pour fournir une vision actualisée de l'état de l'EDS.*
+            """)
+                            
         return use_simulation
 
     
@@ -269,6 +303,84 @@ class Dashboard:
             self.chart_display.create_archive_chart(archive_data)
         
 
+    def display_about_section(self, use_simulation: bool = None):
+        """
+        Display the about/home section.
+        
+        Args:
+            use_simulation (bool, optional): Not used in this section but kept for consistency
+        """
+        # Centered welcome message with custom styling
+        st.markdown("<h1 style='text-align: center; color: #0f52ba;'>👋 Bienvenue sur le Dashboard EDS</h1>", unsafe_allow_html=True)
+        
+        # Subtitle
+        st.markdown("<p style='text-align: center; font-size: 1.2em; color: #666;'>Monitoring de l'Entrepôt de Données de Santé</p>", unsafe_allow_html=True)
+        
+        # Separator
+        st.markdown("<hr style='margin: 2em 0;'>", unsafe_allow_html=True)
+
+        # Brief introduction
+        st.markdown("""
+            <div style='text-align: center; margin-bottom: 2em;'>
+            Ce tableau de bord fournit une analyse détaillée et en temps réel de l'Entrepôt de Données de Santé (EDS).
+            Explorez les différentes sections pour obtenir des insights sur les données, les utilisateurs et les performances.
+            </div>
+        """, unsafe_allow_html=True)
+
+        # Create two columns for the sections
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("""
+                ### 📊 Métriques Générales
+                <div style='background-color: #f0f2f6; padding: 1em; border-radius: 10px; margin-bottom: 1em;'>
+                ✦ Nombre total de patients dans l'EDS<br>
+                ✦ Décompte des patients test, recherche et sensibles<br>
+                ✦ Vue d'ensemble du volume documentaire
+                </div>
+
+                ### 📈 Monitoring des Connecteurs
+                <div style='background-color: #f0f2f6; padding: 1em; border-radius: 10px; margin-bottom: 1em;'>
+                ✦ Évolution annuelle du volume par connecteur<br>
+                ✦ Tendances mensuelles détaillées<br>
+                ✦ Performance des imports de données
+                </div>
+
+                ### 🗄️ Statut d'Archivage
+                <div style='background-color: #f0f2f6; padding: 1em; border-radius: 10px; margin-bottom: 1em;'>
+                ✦ Période d'archivage globale<br>
+                ✦ Documents éligibles à l'archivage<br>
+                ✦ Distribution par type de document
+                </div>
+            """, unsafe_allow_html=True)
+
+        with col2:
+            st.markdown("""
+                ### 📑 Distribution des Documents
+                <div style='background-color: #f0f2f6; padding: 1em; border-radius: 10px; margin-bottom: 1em;'>
+                ✦ Répartition par origine des documents<br>
+                ✦ Comparaison historique vs récent<br>
+                ✦ Analyse des tendances documentaires
+                </div>
+
+                ### 👥 Activité Utilisateurs
+                <div style='background-color: #f0f2f6; padding: 1em; border-radius: 10px; margin-bottom: 1em;'>
+                ✦ Top utilisateurs par nombre de requêtes<br>
+                ✦ Utilisation historique vs année en cours<br>
+                ✦ Répartition des accès
+                </div>
+            """, unsafe_allow_html=True)
+
+        # Footer with update information
+        st.markdown("""
+            <div style='text-align: center; margin-top: 2em; padding: 1em; background-color: #e6f3ff; border-radius: 10px;'>
+            ℹ️ <i>Ce tableau de bord est mis à jour en temps réel pour fournir une vision actualisée de l'état de l'EDS.</i>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # Add some space at the bottom
+        st.markdown("<br><br>", unsafe_allow_html=True)
+
 
     def run(self):
         """Run the dashboard application."""
@@ -281,20 +393,22 @@ class Dashboard:
         
         # Initialize current section in session state if not exists
         if 'current_section' not in st.session_state:
-            st.session_state.current_section = "Résumé"
+            st.session_state.current_section = "Accueil"
 
         # Summary navigation
         st.sidebar.header("Navigation")
         navigation_options = {
-            "Résumé": self.display_summary_section,
+            "Accueil": self.display_about_section,
+            "Métriques Générales": self.display_summary_section,
             "Distribution des Documents": self.display_document_distribution,
             "Monitoring des Connecteurs": self.display_connector_monitoring,
             "Activité Utilisateurs": self.display_user_activity,
             "Statut d'Archivage": self.display_archive_status
         }
         
+        # Create navigation buttons
         for section_name, display_function in navigation_options.items():
-            if st.sidebar.button(section_name):
+            if st.sidebar.button(section_name, key=f"nav_{section_name}"):
                 st.session_state.current_section = section_name
 
         # Display the current section
