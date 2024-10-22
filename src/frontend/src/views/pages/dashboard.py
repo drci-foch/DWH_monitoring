@@ -59,39 +59,7 @@ class Dashboard:
             #     et la répartition des documents.
             #     """)
             
-            with st.expander("À propos"):
-              st.markdown("""
-                ### Tableau de Bord de Monitoring EDS
-                
-                Ce tableau de bord fournit une analyse détaillée de l'Entrepôt de Données de Santé (EDS) avec les sections suivantes :
-                
-                #### 📊 Métriques Générales
-                - Nombre total de patients dans l'EDS
-                - Décompte des patients test, recherche et sensibles 
-                - Vue d'ensemble du volume documentaire
-                
-                #### 📑 Distribution des Documents
-                - Répartition par origine des documents
-                - Comparaison historique vs récent
-                - Analyse des tendances documentaires
-                
-                #### 📈 Monitoring des Connecteurs  
-                - Évolution annuelle du volume par connecteur
-                - Tendances mensuelles détaillées
-                - Performance des imports de données
-                
-                #### 👥 Activité Utilisateurs
-                - Top utilisateurs par nombre de requêtes
-                - Utilisation historique vs année en cours
-                - Répartition des accès
-                
-                #### 🗄️ Statut d'Archivage
-                - Période d'archivage globale
-                - Documents éligibles à l'archivage
-                - Distribution par type de document
-                
-                *Ce tableau de bord est mis à jour en temps réel pour fournir une vision actualisée de l'état de l'EDS.*
-            """)
+
                             
         return use_simulation
 
