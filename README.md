@@ -112,7 +112,7 @@ DWH_monitoring/
 
 2. Navigate to the frontend directory:
    ```
-   cd src_api/frontend
+   cd src_api/frontend/frontend/src/views/pages
    ```
 
 3. Run the Streamlit app:
@@ -129,12 +129,3 @@ Once both the backend and frontend are running:
 1. Open your web browser and go to `http://localhost:8501` to view the dashboard.
 2. Use the various tabs and visualizations to explore the DWH monitoring data.
 3. The "Refresh Data" button at the top of the dashboard will fetch the latest data from the backend.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
-
-## Acknowledgments
-
-- Thanks to all contributors who have helped shape this project.
-- Special thanks to the Foch Hospital for their support and data.
