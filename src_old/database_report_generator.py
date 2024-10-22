@@ -1,30 +1,202 @@
 import openpyxl
-from openpyxl.chart import BarChart, LineChart, PieChart, Reference
-from openpyxl.chart.label import DataLabelList
-from openpyxl.chart.axis import ChartLines
+from openpyxl.chart import BarChart, LineChart, PieChart, Reference, Series
+from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
-from openpyxl.utils import get_column_letter
 from queries import DatabaseQualityChecker
 from datetime import datetime
-import numpy as np
+import logging
+import time
+import threading
+import sys
+
+def configure_logging():
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        filename='database_quality_report.log',
+        filemode='w'
+    )
+    # Also output to console
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
+    console.setFormatter(formatter)
+    logging.getLogger('').addHandler(console)
+
+
+class LoadingIndicator:
+    def __init__(self, description="Loading"):
+        self.description = description
+        self.is_running = False
+        self.animation = "|/-\\"
+        self.idx = 0
+        self.thread = None
+
+    def animate(self):
+        while self.is_running:
+            print(f"\r{self.description} {self.animation[self.idx % len(self.animation)]}", end="")
+            self.idx += 1
+            time.sleep(0.1)
+
+    def start(self):
+        self.is_running = True
+        self.thread = threading.Thread(target=self.animate)
+        self.thread.start()
+
+    def stop(self):
+        self.is_running = False
+        if self.thread:
+            self.thread.join()
+        sys.stdout.write('\r' + ' ' * (len(self.description) + 2) + '\r')
+        sys.stdout.flush()
+
+logger = logging.getLogger(__name__)
 
 class DatabaseQualityReportGenerator:
     def __init__(self):
         self.db_checker = DatabaseQualityChecker()
-        self.workbook = openpyxl.Workbook()
+        self.workbook = Workbook()
         self.workbook.remove(self.workbook.active)  # Remove default sheet
+        self.logger = logging.getLogger(__name__)
 
     def generate_report(self, filename=r"P:\RechercheClinique\Unité DATA\EDS Foch\Documentation EDS\Documentation technique\Documentation_base_DWH\Monitoring DWH\database_quality_report_{}.xlsx"):
         current_date = datetime.now().strftime("%d-%m-%Y")
-        filename = filename.format(current_date)        
-        self.add_summary_sheet()
-        self.add_document_metrics_sheet()
-        self.add_document_counts_sheet()
-        self.add_recent_document_counts_sheet()
-        self.add_top_users_sheet()
-        self.add_top_users_current_year_sheet()
-        self.workbook.save(filename)
-        print(f"Report generated: {filename}")
+        filename = filename.format(current_date)
+        
+        self.logger.info("Starting report generation...")
+        print("Starting report generation...")
+        
+        try:
+            self.all_stats = self.db_checker.get_all_statistics()
+            self.logger.info("Data fetched successfully.")
+            print("Data fetched successfully.")
+            
+            self.logger.info("Generating report sheets...")
+            print("Generating report sheets...")
+            self.add_summary_sheet()
+            self.add_document_metrics_sheet()
+            self.add_document_counts_sheet()
+            self.add_recent_document_counts_sheet()
+            self.add_top_users_sheet()
+            self.add_top_users_current_year_sheet()
+            self.add_archive_status_sheet()
+            
+            self.workbook.save(filename)
+            self.logger.info(f"Report generated: {filename}")
+            print(f"Report generated: {filename}")
+        except Exception as e:
+            self.logger.exception("An error occurred during report generation:")
+            print(f"An error occurred: {str(e)}")
+
+
+    def add_archive_status_sheet(self):
+        sheet = self.workbook.create_sheet("Archive Status")
+        sheet.column_dimensions['A'].width = 40
+        sheet.column_dimensions['B'].width = 20
+        sheet.column_dimensions['C'].width = 20
+
+        sheet['A1'] = "Archive Status Report"
+        sheet['A1'].font = Font(bold=True, size=14)
+        sheet.merge_cells('A1:C1')
+
+        # Add archive period information
+        archive_period = self.all_stats['archive_period']
+        sheet['A3'] = "Current Archive Period (years)"
+        sheet['B3'] = archive_period
+        sheet['B3'].number_format = '0.00'
+
+        if archive_period > 20:
+            sheet['B3'].font = Font(color="FF0000", bold=True)
+            sheet['C3'] = "Exceeds 20-year limit"
+            sheet['C3'].font = Font(color="FF0000", italic=True)
+
+        # Add total documents to suppress
+        total_to_suppress = self.all_stats['total_documents_to_suppress'][0][0]
+        sheet['A5'] = "Total Documents to Suppress"
+        sheet['B5'] = total_to_suppress
+        sheet['B5'].number_format = '#,##0'
+
+        # Add table headers
+        sheet['A7'] = "Document Origin Code"
+        sheet['B7'] = "Documents to Suppress"
+        sheet['C7'] = "Percentage of Total"
+
+        # Get documents to suppress by origin
+        documents_to_suppress = self.all_stats['documents_to_suppress']
+
+        # Add data to the table
+        for i, (origin, count) in enumerate(documents_to_suppress, start=8):
+            sheet[f'A{i}'] = origin
+            sheet[f'B{i}'] = count
+            sheet[f'B{i}'].number_format = '#,##0'
+            sheet[f'C{i}'] = f'=B{i}/B5'
+            sheet[f'C{i}'].number_format = '0.00%'
+
+        # Apply styling
+        self.apply_table_style(sheet, f'A7:C{7+len(documents_to_suppress)}')
+
+        # Add a pie chart
+        self.add_pie_chart(sheet, f'A7:C{7+len(documents_to_suppress)}', 'E7', "Documents to Suppress by Origin")
+
+    def add_document_count_graph(self, sheet, origin_code, by_year=True):
+        if by_year:
+            counts = self.all_stats['document_counts_by_year'].get(origin_code, [])
+            title = f"Document Count by Year - {origin_code}"
+            x_axis_title = "Year"
+        else:
+            counts = self.all_stats['recent_document_counts_by_month'].get(origin_code, [])
+            title = f"Recent Document Count by Month - {origin_code}"
+            x_axis_title = "Month"
+
+        if not counts:
+            self.logger.warning(f"No data available for {origin_code}")
+            return
+
+        # Add data to sheet
+        start_row = sheet.max_row + 2
+        sheet.cell(row=start_row, column=1, value=title)
+        sheet.cell(row=start_row + 1, column=1, value=x_axis_title)
+        sheet.cell(row=start_row + 1, column=2, value="Document Count")
+
+        for i, (date, count) in enumerate(counts, start=start_row + 2):
+            sheet.cell(row=i, column=1, value=date)
+            sheet.cell(row=i, column=2, value=count)
+
+        # Create chart
+        chart = LineChart()
+        chart.title = title
+        chart.style = 2
+        chart.x_axis.title = x_axis_title
+        chart.y_axis.title = "Document Count"
+
+        # Add data series
+        data = Reference(sheet, min_col=2, min_row=start_row + 1, max_row=start_row + 1 + len(counts))
+        series = chart.series.new()
+        series.values = data
+        series.title = "Document Count"
+
+        # Set categories
+        cats = Reference(sheet, min_col=1, min_row=start_row + 2, max_row=start_row + 1 + len(counts))
+        chart.set_categories(cats)
+
+        # Add median line
+        median = self.db_checker.get_median_document_count(counts)
+        median_series = chart.series.new()
+        median_series.values = [median] * len(counts)
+        median_series.title = f"Median ({median})"
+
+        # Style the series
+        chart.series[0].graphicalProperties.line.width = 20000  # Adjust line width
+        chart.series[1].graphicalProperties.line.solidFill = "FF0000"  # Red color
+        chart.series[1].graphicalProperties.line.width = 20000  # Adjust line width
+        chart.series[1].graphicalProperties.line.dashStyle = "dash"
+
+        # Add chart to sheet
+        sheet.add_chart(chart, f"E{start_row}")
+
+        # Adjust chart size
+        chart.width = 15
+        chart.height = 10
 
     def add_summary_sheet(self):
         sheet = self.workbook.create_sheet("Summary")
@@ -35,7 +207,8 @@ class DatabaseQualityReportGenerator:
         sheet['A1'].font = Font(bold=True, size=14)
         sheet.merge_cells('A1:B1')
         
-        patient_count = self.db_checker.get_patient_count()
+        patient_count = self.all_stats['patient_count'][0][0]
+
         
         indicators = [
             ("Total Number of Patients", f"{patient_count}"),
@@ -52,21 +225,27 @@ class DatabaseQualityReportGenerator:
 
         self.apply_table_style(sheet, 'A3:B7')
 
-    # def add_patient_count_sheet(self):
-    #     sheet = self.workbook.create_sheet("Patient_Count")
-    #     patient_count = self.db_checker.get_patient_count()
+        # Add new section for special patient types
+        sheet['A9'] = "Special Patient Types"
+        sheet['A9'].font = Font(bold=True, size=12)
 
-    #     sheet['A1'] = "Total Number of Patients"
-    #     sheet['A1'].font = Font(bold=True, size=14)
-    #     sheet['A2'] = "Count"
-    #     sheet['B2'] = patient_count
-    #     sheet['B2'].number_format = '#,##0'
+        special_patients = [
+            ("Special patients", ''),
+            ("Test Patients (LASTNAME = 'TEST')", self.all_stats['test_patients']),
+            ("Research Patients (LASTNAME = 'INSECTE')", self.all_stats['research_patients']),
+            ("Celebrity Patients (LASTNAME = 'FLEUR')", self.all_stats['celebrity_patients'])
+        ]
 
-    #     self.apply_table_style(sheet, 'A2:B2')
+        for i, (patient_type, patients) in enumerate(special_patients, start=10):
+            sheet[f'A{i}'] = patient_type
+            sheet[f'B{i}'] = len(patients)
+            sheet[f'B{i}'].number_format = '#,##0'
+
+        self.apply_table_style(sheet, f'A10:B{13}')
 
     def add_document_counts_sheet(self):
         sheet = self.workbook.create_sheet("Document_Counts")
-        doc_counts = self.db_checker.get_document_counts_by_origin()
+        doc_counts = self.all_stats['document_counts']
 
         # Process and group the data
         grouped_counts = {}
@@ -119,10 +298,15 @@ class DatabaseQualityReportGenerator:
             row[0].number_format = '#,##0'
 
         self.add_pie_chart(sheet, f'A5:C{len(sorted_counts)+5}', 'E5', "Document Distribution by Origin")
+        
+        # Add line graphs for each DOCUMENT_ORIGIN_CODE
+        origins = [row[0] for row in self.all_stats['document_origins']]
+        for origin in origins:
+            self.add_document_count_graph(sheet, origin, by_year=True)
 
     def add_recent_document_counts_sheet(self):
         sheet = self.workbook.create_sheet("Recent_Documents")
-        doc_counts = self.db_checker.get_recent_document_counts_by_origin()
+        doc_counts = self.all_stats['recent_document_counts']
 
         # Process and group the data
         grouped_counts = {}
@@ -152,8 +336,11 @@ class DatabaseQualityReportGenerator:
 
         for i, (origin, count) in enumerate(sorted_counts, start=6):
             sheet[f'A{i}'] = origin
-            sheet[f'B{i}'] = f"=C{i}/SUM($C$6:$C${len(sorted_counts)+5})"
+            sheet[f'B{i}'] = f"=C{i}/SUM($C$13:$C${len(sorted_counts)+5})"
             sheet[f'C{i}'] = count
+        origins = [row[0] for row in self.all_stats['document_origins']]
+        for origin in origins:
+            self.add_document_count_graph(sheet, origin, by_year=False)
 
         self.apply_table_style(sheet, f'A5:C{len(sorted_counts)+5}')
         sheet['B2'].number_format = '#,##0'
@@ -167,12 +354,79 @@ class DatabaseQualityReportGenerator:
         for row in sheet[f'C6:C{len(sorted_counts)+5}']:
             row[0].number_format = '#,##0'
 
-        self.add_pie_chart(sheet, f'A5:C{len(sorted_counts)+5}', 'E5', "Recent Document Distribution by Origin")
+        self.add_pie_chart(sheet, f'A5:C9', '05', "Recent Document Distribution by Origin")
 
+    def add_document_count_graph(self, sheet, origin_code, by_year=True):
+        if by_year:
+            counts = self.all_stats['document_counts_by_year'].get(origin_code, [])
+            title = f"Document Count by Year - {origin_code}"
+            x_axis_title = "Year"
+        else:
+            counts = self.all_stats['recent_document_counts_by_month'].get(origin_code, [])
+            title = f"Recent Document Count by Month - {origin_code}"
+            x_axis_title = "Month"
+
+        if not counts:
+            self.logger.warning(f"No data available for {origin_code}")
+            return
+
+        # Add data to sheet
+        start_row = sheet.max_row + 2
+        sheet.cell(row=start_row, column=1, value=title)
+        sheet.cell(row=start_row + 1, column=1, value=x_axis_title)
+        sheet.cell(row=start_row + 1, column=2, value="Document Count")
+
+        for i, (date, count) in enumerate(counts, start=start_row + 2):
+            sheet.cell(row=i, column=1, value=date)
+            sheet.cell(row=i, column=2, value=count)
+
+        # Only create chart if there's more than one data point
+        if len(counts) > 1:
+            # Create chart
+            chart = LineChart()
+            chart.title = title
+            chart.style = 2
+            chart.x_axis.title = x_axis_title
+            chart.y_axis.title = "Document Count"
+
+            # Add data series
+            data = Reference(sheet, min_col=2, min_row=start_row + 1, max_row=start_row + 1 + len(counts))
+            series = chart.series.new()
+            series.values = data
+            series.title = "Document Count"
+
+            # Set categories
+            cats = Reference(sheet, min_col=1, min_row=start_row + 2, max_row=start_row + 1 + len(counts))
+            chart.set_categories(cats)
+
+            # Add median line
+            median = self.db_checker.get_median_document_count(counts)
+            median_series = chart.series.new()
+            median_series.values = [median] * len(counts)
+            median_series.title = f"Median ({median})"
+
+            # Style the series
+            chart.series[0].graphicalProperties.line.width = 20000  # Adjust line width
+            chart.series[1].graphicalProperties.line.solidFill = "FF0000"  # Red color
+            chart.series[1].graphicalProperties.line.width = 20000  # Adjust line width
+            chart.series[1].graphicalProperties.line.dashStyle = "dash"
+
+            # Add chart to sheet, ensuring a valid cell reference
+            chart_cell = f"E{start_row}"
+            if chart_cell[0].isalpha() and chart_cell[1:].isdigit():
+                sheet.add_chart(chart, chart_cell)
+            else:
+                self.logger.warning(f"Invalid chart position {chart_cell} for {origin_code}. Skipping chart.")
+
+            # Adjust chart size
+            chart.width = 15
+            chart.height = 10
+        else:
+            self.logger.warning(f"Not enough data points to create chart for {origin_code}")
 
     def add_top_users_sheet(self):
         sheet = self.workbook.create_sheet("Top Users")
-        top_users = self.db_checker.get_top_users()
+        top_users = self.all_stats['top_users']
         
         sheet['A1'] = "Top Users by Query Count"
         sheet['A1'].font = Font(bold=True, size=14)
@@ -192,7 +446,7 @@ class DatabaseQualityReportGenerator:
 
     def add_top_users_current_year_sheet(self):
         sheet = self.workbook.create_sheet("Top Users Current Year")
-        top_users = self.db_checker.get_top_users_current_year()
+        top_users = self.all_stats['top_users_current_year']
         
         current_year = datetime.now().year
         sheet['A1'] = f"Top Users by Query Count (Current Year: {current_year})"
@@ -224,7 +478,8 @@ class DatabaseQualityReportGenerator:
         sheet.merge_cells('A1:E1')
 
         # Fetch statistics and delay data
-        stats_list, delay_results = self.db_checker.get_stats_and_delays_document_monthly()
+        stats_list = self.all_stats['stats_and_delays']
+        delay_results = self.all_stats['delay_results']
         
         print(f"Debug - stats_list: {stats_list}")
         print(f"Debug - delay_results type: {type(delay_results)}")
@@ -275,58 +530,6 @@ class DatabaseQualityReportGenerator:
         for row in sheet['A2:B8']:
             for cell in row:
                 cell.border = thin_border
-
-        # # Extract delay days for histogram
-        # try:
-        #     all_delays = [float(row[4]) for row in delay_results if row and len(row) > 4]
-        # except (IndexError, ValueError) as e:
-        #     sheet['A9'] = f"Error extracting delay data: {str(e)}"
-        #     sheet['A9'].font = Font(color="FF0000", bold=True)
-        #     return
-
-        # if not all_delays:
-        #     sheet['A9'] = "No valid delay data found for histogram."
-        #     sheet['A9'].font = Font(color="FF0000", bold=True)
-        #     return
-
-        # # Create histogram data
-        # hist, bin_edges = np.histogram(all_delays, bins=20)
-        
-        # # Prepare data for histogram
-        # sheet['D2'] = "Histogram Data"
-        # sheet['D2'].font = Font(bold=True)
-        # sheet['E2'] = "Frequency"
-        # sheet['E2'].font = Font(bold=True)
-        
-        # for i, (edge, freq) in enumerate(zip(bin_edges[:-1], hist), start=3):
-        #     sheet.cell(row=i, column=4, value=f"{edge:.2f} to {bin_edges[i-2]:.2f}")
-        #     sheet.cell(row=i, column=5, value=freq)
-        
-        # # Create bar chart (histogram)
-        # chart = BarChart()
-        # chart.type = "col"
-        # chart.style = 10
-        # chart.title = "Document Delay Distribution (past month)"
-        # chart.y_axis.title = "Frequency"
-        # chart.x_axis.title = "Delay Range (days)"
-        
-        # data = Reference(sheet, min_col=5, min_row=2, max_row=22, max_col=5)
-        # cats = Reference(sheet, min_col=4, min_row=3, max_row=22)
-        # chart.add_data(data, titles_from_data=True)
-        # chart.set_categories(cats)
-        
-        # # Customize chart
-        # chart.series[0].graphicalProperties.solidFill = "8BB9E7"
-        # chart.y_axis.majorGridlines = None
-        # chart.x_axis.tickLblPos = "low"
-        
-        # sheet.add_chart(chart, "A10")
-        
-        # # Adjust chart size
-        # chart.width = 30
-        # chart.height = 15
-
-        # sheet.sheet_view.showGridLines = False
         
         # Add a note about negative values
         note = sheet.cell(row=9, column=1, value="Note: Negative values indicate documents updated before their creation date in the DPI. We filtered out the Doctolib documents for these metrics.")
@@ -368,6 +571,7 @@ class DatabaseQualityReportGenerator:
                 if cell.row == sheet[cell_range.split(':')[0]].row:
                     cell.font = Font(bold=True)
                     cell.fill = light_blue_fill
+                cell.alignment = Alignment(horizontal='left')
 
     def add_pie_chart(self, sheet, data_range, position, title):
         pie = PieChart()
@@ -377,10 +581,6 @@ class DatabaseQualityReportGenerator:
         pie.set_categories(labels)
         pie.title = title
 
-        # pie.dataLabels = DataLabelList()
-        # pie.dataLabels.showCatName = False
-        # pie.dataLabels.showVal = False
-        # pie.dataLabels.showPercent = False
 
         # Keep legend
         pie.legend.position = 'r'  # Position legend to the right
@@ -405,16 +605,10 @@ class DatabaseQualityReportGenerator:
         chart.set_categories(cats)
 
         # Remove all ticks and gridlines
-        #chart.y_axis.majorGridlines = None
-        #chart.y_axis.minorGridlines = None
-        #chart.x_axis.majorGridlines = None
-        #chart.x_axis.minorGridlines = None
-        chart.y_axis.majorTickMark = "none"
-        chart.y_axis.minorTickMark = "none"
-        chart.x_axis.majorTickMark = "none"
-        chart.x_axis.minorTickMark = "none"
-        #chart.y_axis.delete = True  # This removes the axis line
-        #chart.x_axis.delete = True  # This removes the axis line
+        #chart.y_axis.majorTickMark = "none"
+        #chart.y_axis.minorTickMark = "none"
+        #chart.x_axis.majorTickMark = "none"
+        #chart.x_axis.minorTickMark = "none"
 
         sheet.add_chart(chart, position)
 
@@ -432,21 +626,21 @@ class DatabaseQualityReportGenerator:
         chart.add_data(data, titles_from_data=True)
         chart.set_categories(cats)
 
-        # Remove all ticks and gridlines
-        #chart.y_axis.majorGridlines = None
-        #chart.y_axis.minorGridlines = None
-        #chart.x_axis.majorGridlines = None
-        #chart.x_axis.minorGridlines = None
+        # Remove all ticks 
         chart.y_axis.majorTickMark = "none"
         chart.y_axis.minorTickMark = "none"
         chart.x_axis.majorTickMark = "none"
         chart.x_axis.minorTickMark = "none"
-        #chart.y_axis.delete = True  # This removes the axis line
-        #chart.x_axis.delete = True  # This removes the axis line
 
         sheet.add_chart(chart, position)
 
 
 if __name__ == "__main__":
+    configure_logging()
+    logger = logging.getLogger(__name__)
+    logger.info("Starting database quality report generation")
+    
     report_generator = DatabaseQualityReportGenerator()
     report_generator.generate_report()
+    
+    logger.info("Database quality report generation completed")

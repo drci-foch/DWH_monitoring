@@ -1,14 +1,74 @@
-# DWH Monitoring Project
+# DWH Monitoring Dashboard
 
-## Overview
-This project is designed to generate comprehensive reports on the quality and usage of a Data Warehouse (DWH). It provides insights into patient counts, document distributions, user activity, and more.
+## Project Overview
 
-## Prerequisites
-- Python 3.7+
-- Oracle Database access
-- Required Python packages (see `requirements.txt`)
+This project is a comprehensive monitoring dashboard for a Data Warehouse (DWH) database. It provides various metrics and visualizations to help monitor database health, usage patterns, and data quality.
 
-## Installation
+## Features
+
+- Summary statistics of database contents
+- User activity monitoring
+- Document metrics and counts
+- Archive status and management
+- Data quality checks
+- Visualization of trends over time
+
+## Project Structure
+
+```
+DWH_monitoring/
+│
+├── src/
+│   ├── backend/
+│   │   ├── app/
+│   │   │   ├── api/
+│   │   │   │   ├── routes
+│   │   │   │   │   ├── archives.py
+│   │   │   │   │   ├── documents.py
+│   │   │   │   │   ├── sources.py
+│   │   │   │   │   ├── summary.py
+│   │   │   │   │   └── users.py
+│   │   │   │   ├── deps.py
+│   │   │   │   └── main.py
+│   │   │   ├── core/
+│   │   │   │   ├── config.py
+│   │   │   │   ├── db.py
+│   │   │   │   └── security.py
+│   │   │   ├── crud.py
+│   │   │   ├── dependencies.py
+│   │   │   └── main.py
+│   │   └── .env
+│   └── frontend/
+         ├── src/
+         │   ├── api/
+         │   │   ├── __init__.py
+         │   │   ├── client.py      
+         │   │   ├── endpoints.py      
+         │   │   └── exceptions.py          
+         │   ├── data/
+         │   │   ├── __init__.py
+         │   │   └── generators.py      
+         │   ├── services/
+         │   │   ├── __init__.py
+         │   │   └── data_service.py      
+         │   └── views/
+         │       ├── __init__.py
+         │       ├── components/       
+         │       │   ├── __init__.py
+         │       │   ├── metrics.py
+         │       │   └── charts.py
+         │       └── pages/            
+         │           ├── __init__.py
+         └──           └── dashboard.py                 
+├── venv/
+├── README.md
+├── requirements.txt
+├── notes.txt
+├── .gitattributes
+└── .gitignore
+```
+
+## Setup and Installation
 
 1. Clone the repository:
    ```
@@ -16,45 +76,69 @@ This project is designed to generate comprehensive reports on the quality and us
    cd DWH_monitoring
    ```
 
-2. Create a virtual environment (optional but recommended):
+2. Set up a virtual environment:
    ```
-   python -m venv venv
-   source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
+   python3 -m venv venv
+   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
    ```
 
-3. Install the required packages:
+3. Install dependencies:
    ```
    pip install -r requirements.txt
    ```
 
-## Configuration
+## Running the Application
 
-1. Update the `database_manager.py` file with your Oracle database connection details:
-   ```python
-   self.oracle_connection_params = {
-       "user": "your_username",
-       "password": "your_password",
-       "dsn": "your_host:your_port/your_service_name"
-   }
+### Starting the Backend
+
+1. Navigate to the backend directory:
    ```
+   cd src_api/backend
+   ```
+
+2. Start the FastAPI server:
+   ```
+   uvicorn app.main:app --reload
+   ```
+
+   The API will be available at `http://localhost:8000`. You can access the API documentation at `http://localhost:8000/docs`.
+
+### Starting the Frontend
+
+1. Open a new terminal window and activate the virtual environment:
+   ```
+   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+   ```
+
+2. Navigate to the frontend directory:
+   ```
+   cd src_api/frontend
+   ```
+
+3. Run the Streamlit app:
+   ```
+   streamlit run dashboard.py
+   ```
+
+   The dashboard will open in your default web browser, typically at `http://localhost:8501`.
 
 ## Usage
 
-Run the main script to generate the report:
+Once both the backend and frontend are running:
 
-```
-python src/database_report_generator.py
-```
+1. Open your web browser and go to `http://localhost:8501` to view the dashboard.
+2. Use the various tabs and visualizations to explore the DWH monitoring data.
+3. The "Refresh Data" button at the top of the dashboard will fetch the latest data from the backend.
 
-This will create an Excel file named `database_quality_report.xlsx` in the chosen directory.
+## Contributing
 
-## Customization
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
 
-You can customize the report by modifying the `DatabaseQualityReportGenerator` class in `database_report_generator.py`. Add new sheets or modify existing ones to suit your specific needs.
+## License
 
-## Troubleshooting
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
 
-If you encounter any database connection issues:
-1. Ensure your Oracle client is properly installed and configured.
-2. Verify that the connection parameters in `database_manager.py` are correct.
-3. Check your network connectivity to the database server.
+## Acknowledgments
+
+- Thanks to all contributors who have helped shape this project.
+- Special thanks to the Foch Hospital for their support and data.
