@@ -4,7 +4,7 @@ import requests
 from typing import Dict, Optional
 import logging
 
-from generate_data import generate_document_counts, generate_document_counts_by_year, generate_recent_document_counts_by_month, generate_top_users, generate_archive_sample_data, generate_sample_data
+from call_api import generate_document_counts, generate_document_counts_by_year, generate_recent_document_counts_by_month, generate_top_users, generate_archive_sample_data, generate_sample_data
 
 # Data Fetching Functions
 def fetch_data(endpoint: str, params: Optional[Dict] = None) -> Optional[Dict]:
