@@ -130,10 +130,6 @@ Once both the backend and frontend are running:
 2. Use the various tabs and visualizations to explore the DWH monitoring data.
 3. The "Refresh Data" button at the top of the dashboard will fetch the latest data from the backend.
 
-## Contributing
-
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
