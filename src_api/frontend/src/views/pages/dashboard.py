@@ -61,6 +61,7 @@ class Dashboard:
                 
         return use_simulation
 
+    
     def fetch_data_with_simulation(self, endpoint: str, use_simulation: bool, params: Optional[Dict] = None) -> Optional[Dict]:
         """
         Fetch data with simulation toggle.
@@ -125,44 +126,59 @@ class Dashboard:
                         recent_doc_counts,
                         "Distribution des Documents Récents par Origine"
                     )
-
+                        
     def display_connector_monitoring(self, use_simulation: bool):
         """Display connector monitoring section."""
         st.header("📈 Monitoring des connecteurs")
+        
         with st.expander("ℹ️ À propos du Monitoring des connecteurs"):
             st.markdown("""
             **Tendances Annuelles:**
-            - Affiche le nombre de documents groupés par année basé sur UPDATE_DATE
-            - Inclut tous les documents pour les codes d'origine sélectionnés
-            - Les décomptes sont basés sur des identifiants de documents distincts
-            
-            **Tendances Mensuelles:**
-            - Affiche les données des 12 derniers mois
-            - Basé sur DOCUMENT_DATE (date de création)
-            - Filtré depuis le début de l'année précédente
-            - Mise à jour mensuelle en début de mois
-            - Exclut les dates futures
+            ...
             """)
 
         doc_counts = self.fetch_data_with_simulation("/api/document_counts", use_simulation)
         if doc_counts:
             origin_codes = sorted(set(item["document_origin_code"] for item in doc_counts))
-            
+
+            # Initialize session state for both the selection and the "select all" state
+            if "selected_origins" not in st.session_state:
+                st.session_state.selected_origins = origin_codes[:5] if len(origin_codes) > 5 else origin_codes
+            if "select_all" not in st.session_state:
+                st.session_state.select_all = False
+
+            # Create callback functions to handle state changes
+            def handle_select_all():
+                st.session_state.selected_origins = origin_codes
+                st.session_state.select_all = True
+
+            def handle_selection_change():
+                # Update selected_origins based on the multiselect value
+                st.session_state.selected_origins = st.session_state.multiselect_value
+                st.session_state.select_all = False
+
             col1, col2 = st.columns([3, 1])
+            
             with col1:
-                selected_origins = st.multiselect(
+                # Use the session state value as the default and store new selections in session state
+                st.session_state.selected_origins = st.multiselect(
                     "Sélectionner les Origines de Documents à Afficher",
                     options=origin_codes,
-                    default=origin_codes[:5] if len(origin_codes) > 5 else origin_codes,
+                    default=st.session_state.selected_origins,
+                    key="multiselect_value",
+                    on_change=handle_selection_change,
                     help="Choisir les origines de documents à afficher dans les graphiques"
                 )
-            
+
             with col2:
-                if st.button("Tout Sélectionner"):
-                    selected_origins = origin_codes
-            
-            if selected_origins:
-                self.display_time_series_data(selected_origins, use_simulation)
+                if st.button("Tout Sélectionner", on_click=handle_select_all):
+                    pass  # The actual selection is handled in the callback
+
+            # Display the time series data using the session state values
+            if st.session_state.selected_origins:
+                self.display_time_series_data(st.session_state.selected_origins, use_simulation)
+
+
 
     def display_time_series_data(self, selected_origins: List[str], use_simulation: bool):
         """Display time series data for selected origins."""
@@ -261,9 +277,12 @@ class Dashboard:
         st.title("Monitoring de l'Entrepôt de Donnée de Santé")
         st.caption("Vue d'ensemble complète des indicateurs de la base de données")
         
-   
         use_simulation = self.setup_sidebar()
         
+        # Initialize current section in session state if not exists
+        if 'current_section' not in st.session_state:
+            st.session_state.current_section = "Résumé"
+
         # Summary navigation
         st.sidebar.header("Navigation")
         navigation_options = {
@@ -276,10 +295,11 @@ class Dashboard:
         
         for section_name, display_function in navigation_options.items():
             if st.sidebar.button(section_name):
-                display_function(use_simulation)
+                st.session_state.current_section = section_name
 
-        # Display the initial section (Résumé)
-        #self.display_summary_section(use_simulation)
+        # Display the current section
+        if st.session_state.current_section in navigation_options:
+            navigation_options[st.session_state.current_section](use_simulation)
 
 def main():
     """Main entry point for the dashboard."""

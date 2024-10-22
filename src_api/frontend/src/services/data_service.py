@@ -33,7 +33,7 @@ class DataService:
 
     def fetch_data(self, endpoint: str, params: Optional[Dict] = None) -> Optional[Dict]:
         """
-        Fetch data from real API.
+        Fetch data from a real API.
         
         Args:
             endpoint (str): API endpoint path
@@ -45,8 +45,8 @@ class DataService:
         try:
             url = f"{self.base_url}{endpoint}"
             response = requests.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
+            response.raise_for_status()  # Raise an error for bad responses (4xx and 5xx)
+            return response.json()  # Return the parsed JSON response
         except requests.RequestException as e:
             logger.error(f"Request failed for {endpoint}: {str(e)}")
             st.error(f"Error fetching data from {endpoint}: {str(e)}")
@@ -55,6 +55,7 @@ class DataService:
             logger.error(f"Invalid JSON response from {endpoint}: {str(e)}")
             st.error(f"Error decoding response from {endpoint}: {str(e)}")
             return None
+
 
     def fetch_simulated_data(self, endpoint: str, params: Optional[Dict] = None) -> Optional[Dict]:
         """
