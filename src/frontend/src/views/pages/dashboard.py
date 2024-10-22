@@ -9,9 +9,9 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../')))
 
 # Try importing again
-from src_api.frontend.src.services.data_service import DataService
-from src_api.frontend.src.views.components.metrics import MetricsDisplay
-from src_api.frontend.src.views.components.charts import ChartDisplay
+from src.frontend.src.services.data_service import DataService
+from src.frontend.src.views.components.metrics import MetricsDisplay
+from src.frontend.src.views.components.charts import ChartDisplay
 
 
 

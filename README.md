@@ -18,7 +18,7 @@ This project is a comprehensive monitoring dashboard for a Data Warehouse (DWH) 
 ```
 DWH_monitoring/
 │
-├── src_api/
+├── src/
 │   ├── backend/
 │   │   ├── app/
 │   │   │   ├── api/
@@ -39,7 +39,27 @@ DWH_monitoring/
 │   │   │   └── main.py
 │   │   └── .env
 │   └── frontend/
-│       └── dashboard.py
+         ├── src/
+         │   ├── api/
+         │   │   ├── __init__.py
+         │   │   ├── client.py      
+         │   │   ├── endpoints.py      
+         │   │   └── exceptions.py          
+         │   ├── data/
+         │   │   ├── __init__.py
+         │   │   └── generators.py      
+         │   ├── services/
+         │   │   ├── __init__.py
+         │   │   └── data_service.py      
+         │   └── views/
+         │       ├── __init__.py
+         │       ├── components/       
+         │       │   ├── __init__.py
+         │       │   ├── metrics.py
+         │       │   └── charts.py
+         │       └── pages/            
+         │           ├── __init__.py
+         └──           └── dashboard.py                 
 ├── venv/
 ├── README.md
 ├── requirements.txt
