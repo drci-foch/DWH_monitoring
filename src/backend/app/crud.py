@@ -333,12 +333,12 @@ class DatabaseQualityChecker:
         """Chunked processing version for very large datasets"""
         base_query = """
         SELECT /*+ PARALLEL(4) INDEX(d PK_DWH_DOCUMENT) */
-            d.UPDATE_DATE,
+            d.DOCUMENT_DATE,
             d.DOCUMENT_ORIGIN_CODE,
             COUNT(*) OVER () as total_rows
         FROM DWH.DWH_DOCUMENT d
-        WHERE d.UPDATE_DATE >= :start_date
-        AND d.UPDATE_DATE < :end_date
+        WHERE d.DOCUMENT_DATE >= :start_date
+        AND d.DOCUMENT_DATE < :end_date
         """
 
         try:
