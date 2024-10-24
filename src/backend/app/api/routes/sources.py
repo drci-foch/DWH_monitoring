@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.crud import DatabaseQualityChecker
 from app.dependencies import get_db_checker
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any
 import logging
 
 logger = logging.getLogger(__name__)
