@@ -14,6 +14,16 @@ Last Updated: 2024-10-22
 - [ ] Test and debug Frontend on real data
 - [ ] Test Optimized CRUD :: crud_to_test.py
 
+## PMSI TAB
+- [ ] Date of last upload
+- [ ] Time period concerned
+- [ ] Identify gaps (linear graph counting PMSI document creation dates, not upload)
+
+## MOVEMENT & STAYS MONITORING TAB
+- [ ] Verify if structured data is properly imported
+- [ ] Linear graph on movement & stays
+- [ ] % missing and % aberrant
+
 ## GENERAL IMPROVEMENTS
 - [x] Add red median line to each graph
 
@@ -43,20 +53,6 @@ Last Updated: 2024-10-22
 - [x] Current archive period (alert for +20 years)
 - [x] Number of documents to delete from each source
 
-## RDV DOCTOLIB TAB
-- [ ] Monitor activity of each service retrospectively
-- [ ] Access to powerstay database (possibly on easily)
-
-## MOVEMENT & STAYS MONITORING TAB
-- [ ] Verify if structured data is properly imported
-- [ ] Linear graph on movement & stays
-- [ ] % missing and % aberrant
-
-## PMSI TAB
-- [ ] Date of last upload
-- [ ] Time period concerned
-- [ ] Identify gaps (linear graph counting PMSI document creation dates, not upload)
-
 ## USERS TAB
 - [ ] Add service next to user names
 - [X] Group all CODOC people to have a line of CODOC queries
@@ -82,6 +78,14 @@ Last Updated: 2024-10-22
   - Tanguy De Poix
   - Charlotte Monthéan
 - [ ] Decide on monitoring DIM quality activity
+
+
+
+V2 : 
+
+## RDV DOCTOLIB TAB
+- [ ] Monitor activity of each service retrospectively
+- [ ] Access to powerstay database (possibly on easily)
 
 ## FEASIBILITY TAB
 - [ ] Implement cohort with EASYDORE code (not immediate priority)

@@ -30,24 +30,14 @@ class MetricsDisplay:
         Args:
             summary (Dict[str, Any]): Summary data containing patient and document counts
         """
-        st.header("📊 Métriques Générales")
-        
-        with st.expander("ℹ️ À propos de ces métriques"):
-            st.markdown("""
-            - **Patients Totaux**: Nombre de patients uniques dans la base de données
-            - **Patients Test**: Patients avec le nom de famille 'TEST'
-            - **Patients Recherche**: Patients avec le nom de famille 'FLEUR'
-            - **Patients Sensibles**: Patients avec le nom de famille 'INSECTE'
-            - Tous les décomptes sont basés sur les numéros uniques de patients (PATIENT_NUM)
-            """)
 
         metrics = [
-            ("👥 Total Patients", summary["patient_count"], "Nombre total de patients"),
-            ("🧪 Patients Test", summary["test_patient_count"], "Patients de test"),
-            ("🔬 Patients Recherche", summary["research_patient_count"], "Patients de recherche"),
-            ("⭐ Patients Sensibles", summary["celebrity_patient_count"], "Patients sensibles"),
-            ("📄 Documents Totaux", summary["total_documents"], "Nombre total de documents"),
-            ("📥 Documents Récents", summary["recent_documents"], "Documents des 7 derniers jours")
+            ("👥 Total Patients", summary["patient_count"], "Nombre total de patients ayant au moins 1 document"),
+            ("🧪 Patients Test", summary["test_patient_count"], "Patients de test (Nom de famille = 'TEST')"),
+            ("🔬 Patients Recherche", summary["research_patient_count"], "Patients de recherche (Nom de famille = 'INSECTE')"),
+            ("⭐ Patients Sensibles", summary["celebrity_patient_count"], "Patients sensibles (Nom de famille = 'FLEUR')"),
+            ("📄 Documents Totaux", summary["total_documents"], "Nombre total de documents dans l'entrepôt"),
+            ("📥 Documents Récents", summary["recent_documents"], "Nombre de documents importés sur les 7 derniers jours")
         ]
         
         MetricsDisplay.create_metric_grid(metrics)

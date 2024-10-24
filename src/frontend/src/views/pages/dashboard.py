@@ -4,6 +4,8 @@ from typing import Dict, Optional, List
 from datetime import datetime
 import logging
 import sys
+import plotly.graph_objects as go
+
 import os
 # Append one directory above 'src_api'
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../')))
@@ -86,12 +88,107 @@ class Dashboard:
             return None
 
     def display_summary_section(self, use_simulation: bool):
-
+        """Display summary section with metrics and boxplot."""
+        st.header("📊 Métriques Générales")
+        
+        with st.expander("ℹ️ À propos des Métriques Générales"):
+            st.markdown("""
+            **Vue d'ensemble:**
             
-        summary = self.fetch_data_with_simulation("/summary/api/summary", use_simulation)
+            📊 **Statistiques Patients**
+            - Nombre total de patients dans l'EDS
+            - Répartition par catégorie :
+            * Patients Test (utilisés pour la validation)
+            * Patients Recherche (inclus dans des protocoles)
+            * Patients Sensibles (VIP, personnel hospitalier...)
+            
+            📈 **Statistiques Documents**
+            - Volume total des documents stockés
+            - Documents importés dans les 7 derniers jours
+            
+            ⏱️ **Délais de Traitement**
+            - Mesure le temps écoulé entre :
+            * Date de création : quand le document a été créé dans le système source
+            * Date d'importation : quand le document a été intégré dans l'EDS
+            - Permet d'évaluer la fraîcheur des données et l'efficacité des connecteurs
+            - Les statistiques incluent :
+            * Délai moyen et médian
+            * Distribution (Q1, Q3, Min, Max)
+            * Identification des retards potentiels
+            """)
+        
+        # Fetch both summary and metrics data
+        summary = self.fetch_data_with_simulation("/api/summary", use_simulation)
+        metrics = self.fetch_data_with_simulation("/api/document_metrics", use_simulation)
+        
         if summary:
             self.metrics_display.display_summary_metrics(summary)
+        
+        if metrics:
+            self.display_boxplot(metrics)
 
+
+    def display_boxplot(self, metrics: Dict[str, float]):
+        """Display boxplot of document processing delays."""
+        st.subheader("📈 Distribution des Délais de Traitement")
+
+        # Create figure
+        fig = go.Figure()
+        
+        # Add boxplot
+        fig.add_trace(go.Box(
+            q1=[metrics['q1']],
+            median=[metrics['median']],
+            q3=[metrics['q3']],
+            lowerfence=[metrics['min_delay']],
+            upperfence=[metrics['max_delay']],
+            mean=[metrics['avg_delay']],
+            name='Délais de Traitement',
+            marker_color='rgb(8,81,156)',
+            boxmean=True
+        ))
+        
+        # Customize layout
+        fig.update_layout(
+            title={
+                'text': 'Distribution des Délais de Traitement des Documents',
+                'y': 0.95,
+                'x': 0.5,
+                'xanchor': 'center',
+                'yanchor': 'top'
+            },
+            yaxis_title='Jours',
+            showlegend=False,
+            height=400,
+            margin=dict(l=40, r=40, t=40, b=40),
+            yaxis=dict(
+                gridcolor='rgb(230,230,230)',
+                zerolinecolor='rgb(200,200,200)'
+            )
+        )
+        
+        # Create two columns for visualization and metrics
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            # Display the plotly chart
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            # Display metrics in a clean format
+            st.write("#### Statistiques Clés")
+            metrics_display = {
+                "Moyenne": f"{metrics['avg_delay']:.1f} jours",
+                "Médiane": f"{metrics['median']:.1f} jours",
+                "Q1 - Q3": f"{metrics['q1']:.1f} - {metrics['q3']:.1f} jours",
+                "Min - Max": f"{metrics['min_delay']:.1f} - {metrics['max_delay']:.1f} jours"
+            }
+            
+            for label, value in metrics_display.items():
+                st.metric(label, value)
+
+
+            
     def display_document_distribution(self, use_simulation: bool):
         """Display document distribution section."""
         st.header("📑 Distribution des Documents")
@@ -135,8 +232,39 @@ class Dashboard:
         
         with st.expander("ℹ️ À propos du Monitoring des connecteurs"):
             st.markdown("""
-            **Tendances Annuelles:**
-            ...
+            ### Monitoring des Flux de Données
+            
+            1️⃣ **Objectif du Monitoring**
+               - Suivi en temps réel des imports de documents
+               - Détection des anomalies dans les flux de données
+               - Évaluation de la performance des connecteurs
+            
+            2️⃣ **Données Affichées**
+               - Volume de documents par origine
+               - Tendances temporelles :
+                 * Analyse annuelle : vision long terme
+                 * Analyse mensuelle : détection rapide des anomalies
+               - Comparaison des performances entre connecteurs
+            
+            3️⃣ **Interprétation des Graphiques**
+               - Pics d'activité : imports massifs ou rattrapage
+               - Creux : potentiels problèmes techniques
+               - Tendances : 
+                 * Croissance : augmentation normale de l'activité
+                 * Stabilité : flux régulier
+                 * Baisse : possible dysfonctionnement
+            
+            4️⃣ **Points d'Attention**
+               - Variations saisonnières normales
+               - Impacts des maintenances planifiées
+               - Dépendance aux systèmes sources
+               - Délais de traitement attendus
+            
+            5️⃣ **Actions Possibles**
+               - Sélection multiple des origines
+               - Comparaison des périodes
+               - Zoom sur des périodes spécifiques
+               - Export des données pour analyse
             """)
 
         doc_counts = self.fetch_data_with_simulation("/api/document_counts", use_simulation)
@@ -261,7 +389,7 @@ class Dashboard:
         with st.expander("ℹ️ À propos du Statut d'Archivage"):
             st.markdown("""
             **Période d'Archive:**
-            - Calculée depuis la date de mise à jour (UPDATE_DATE) du plus ancien document
+            - Calculée depuis la date de création du document (DOCUMENT_DATE) du plus ancien document
             - Les documents de plus de 20 ans sont candidats à l'archivage/suppression
             """)
             
@@ -304,7 +432,8 @@ class Dashboard:
                 <div style='background-color: #f0f2f6; padding: 1em; border-radius: 10px; margin-bottom: 1em;'>
                 ✦ Nombre total de patients dans l'EDS<br>
                 ✦ Décompte des patients test, recherche et sensibles<br>
-                ✦ Vue d'ensemble du volume documentaire
+                ✦ Vue d'ensemble du volume documentaire<br>
+                ✦ Délai de distribution d'acheminement des documents
                 </div>
 
                 ### 📈 Monitoring des Connecteurs
@@ -337,6 +466,14 @@ class Dashboard:
                 ✦ Utilisation historique vs année en cours<br>
                 ✦ Répartition des accès
                 </div>
+                
+                ### 📋 Documents PMSI
+                <div style='background-color: #f0f2f6; padding: 1em; border-radius: 10px; margin-bottom: 1em;'>
+                ✦ Date du dernier chargement PMSI<br>
+                ✦ Périodes concernées<br>
+                ✦ Graphique linéaire des dates de création de documents PMSI<br>
+                </div>
+                
             """, unsafe_allow_html=True)
 
         # Footer with update information
