@@ -6,37 +6,114 @@ from datetime import datetime
 from functools import lru_cache, wraps
 from sqlalchemy import text
 from typing import Dict, List, Any, Set, Tuple
+import multiprocessing as mp
 
 import numpy as np
 from dateutil.relativedelta import relativedelta
+from concurrent.futures import ProcessPoolExecutor
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
 logger = logging.getLogger(__name__)
 
+def process_large_array(data):
+    """Process entire dataset using vectorized operations"""
+    if not data:
+        return {}
+    
+    # Convert to structured array in one go
+    dtype = [('origin', 'U50'), ('doc_num', 'U50')]
+    arr = np.array(data, dtype=dtype)
+    
+    # Pre-compute string operations once for entire dataset
+    origins = arr['origin']
+    docs = arr['doc_num']
+    
+    # Vectorized string replacements
+    mask_easily = np.char.startswith(origins, "Easily")
+    mask_doc_externe = np.char.startswith(origins, "DOC_EXTERNE")
+    
+    # Create modified origins array
+    origins = origins.copy()
+    origins[mask_easily] = "Easily"
+    origins[mask_doc_externe] = "DOC_EXTERNE"
+    
+    # Stack arrays for unique combination counting
+    stacked = np.column_stack((origins, docs))
+    
+    # Get unique combinations efficiently
+    unique_combinations = np.unique(stacked, axis=0)
+    
+    # Count unique origins
+    unique_origins, counts = np.unique(unique_combinations[:, 0], return_counts=True)
+    
+    return dict(zip(unique_origins, counts))
 
-def ttl_cache(ttl_seconds=3600, maxsize=128):
+def process_chunk(chunk_data):
+    """Process a single chunk of data in a separate process"""
+    if not chunk_data:
+        return None
+    
+    # Convert to structured array for efficient processing
+    dtype = [('origin', 'U50'), ('doc_num', 'U50')]
+    chunk_array = np.array(chunk_data, dtype=dtype)
+    
+    # Vectorized string operations
+    mask_easily = np.char.startswith(chunk_array['origin'], "Easily")
+    mask_doc_externe = np.char.startswith(chunk_array['origin'], "DOC_EXTERNE")
+    
+    # Modify origins
+    modified_origins = chunk_array['origin'].copy()
+    modified_origins[mask_easily] = "Easily"
+    modified_origins[mask_doc_externe] = "DOC_EXTERNE"
+    
+    # Create unique pairs using structured array
+    unique_pairs = np.unique(
+        np.core.records.fromarrays(
+            [modified_origins, chunk_array['doc_num']],
+            names='origin,doc_num'
+        )
+    )
+    
+    # Count unique combinations
+    origins, counts = np.unique(unique_pairs['origin'], return_counts=True)
+    return dict(zip(origins, counts))
+
+def cache_with_ttl(seconds: int):
+    """Custom TTL cache decorator using timestamp checking"""
     def decorator(func):
-        cache = {}
-
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            key = str(args) + str(kwargs)
-            current_time = time.time()
-            if key in cache:
-                result, timestamp = cache[key]
-                if current_time - timestamp < ttl_seconds:
-                    return result
-            result = await func(*args, **kwargs)
-            cache[key] = (result, current_time)
-            if len(cache) > maxsize:
-                oldest_key = min(cache, key=lambda k: cache[k][1])
-                del cache[oldest_key]
-            return result
-
+        # Cache the function with standard LRU
+        func = lru_cache(maxsize=1)(func)
+        # Store the timestamp of last execution
+        func.last_execution = 0
+        
+        def wrapper(*args, **kwargs):
+            now = datetime.now().timestamp()
+            # Check if cache has expired
+            if now - func.last_execution > seconds:
+                func.cache_clear()
+                func.last_execution = now
+            return func(*args, **kwargs)
         return wrapper
+    return decorator
 
+
+def ttl_cache(ttl_seconds):
+    def decorator(func):
+        cached_result = None
+        last_update = None
+
+        async def wrapper(*args, **kwargs):
+            nonlocal cached_result, last_update
+            now = datetime.now()
+            if (cached_result is None or 
+                last_update is None or 
+                (now - last_update).total_seconds() > ttl_seconds):
+                cached_result = await func(*args, **kwargs)
+                last_update = now
+            return cached_result
+        return wrapper
     return decorator
 
 
@@ -47,6 +124,11 @@ class DatabaseQualityChecker:
             engine, class_=AsyncSession, expire_on_commit=False
         )
         self.logger = logging.getLogger(__name__)
+        self.num_processes = mp.cpu_count() - 1  # Leave one CPU free
+        self.process_pool = ProcessPoolExecutor(max_workers=self.num_processes)
+
+
+
 
     async def execute_query(self, query: str, params: Dict[str, Any] = None) -> List[Tuple]:
         async with self.async_session() as session:
@@ -61,8 +143,8 @@ class DatabaseQualityChecker:
     async def get_document_origins(self) -> List[str]:
         """Cache document origins as they don't change often"""
         query = """
-        SELECT /*+ INDEX(d PK_DWH_DOCUMENT) */ 
-        DISTINCT DOCUMENT_ORIGIN_CODE 
+        SELECT /*+ PARALLEL(8) INDEX_FFS(d IDX_DOCUMENT_ORIGIN_CODE) */
+            DISTINCT DOCUMENT_ORIGIN_CODE
         FROM DWH.DWH_DOCUMENT d
         """
         result = await self.execute_query(query)
@@ -106,69 +188,73 @@ class DatabaseQualityChecker:
                 "research_patient_count": 0,
             }
 
+    @lru_cache(maxsize=1)
+    def _get_cache_key(self):
+        """Generate cache key based on current timestamp divided by TTL"""
+        return int(datetime.now().timestamp() / 300)  # 300 seconds = 5 minutes
+        
     @ttl_cache(ttl_seconds=300)  # Cache for 5 minutes
     async def get_document_counts(self) -> List[Dict[str, Any]]:
-        """Optimized document counts using numpy for vectorized operations"""
+        """Efficient document count processing using pre-aggregated SQL data"""
         query = """
-        SELECT /*+ PARALLEL(4) */
+        SELECT /*+ PARALLEL(8) */
             DOCUMENT_ORIGIN_CODE,
-            DOCUMENT_NUM
+            COUNT(DOCUMENT_NUM) as DOC_COUNT
         FROM DWH.DWH_DOCUMENT
+        GROUP BY DOCUMENT_ORIGIN_CODE
         """
-
         try:
             results = await self.execute_query(query)
-
-            # Convert to numpy arrays
-            origins, doc_nums = np.array(results).T
-
-            # Create masks for each condition
-            easily_mask = np.char.startswith(origins.astype(str), "Easily")
-            doc_externe_mask = np.char.startswith(origins.astype(str), "DOC_EXTERNE")
-
-            # Apply masks to create grouped origins array
-            grouped_origins = origins.copy()
-            grouped_origins[easily_mask] = "Easily"
-            grouped_origins[doc_externe_mask] = "DOC_EXTERNE"
-
-            # Create unique combinations of grouped origins and doc numbers
-            unique_combinations = np.unique(
-                np.column_stack((grouped_origins, doc_nums)), axis=0
-            )
-
-            # Count unique documents per origin
-            counts = Counter(unique_combinations[:, 0])
-
-            # Convert to sorted list of dictionaries
+            
+            # Simple dictionary-based grouping without numpy
+            grouped_data = {}
+            
+            for row in results:
+                origin, count = row[0], int(row[1])  # Explicit conversion to int
+                
+                # Group by prefix
+                if origin and isinstance(origin, str):
+                    if origin.startswith('Easily'):
+                        key = 'Easily'
+                    elif origin.startswith('DOC_EXTERNE'):
+                        key = 'DOC_EXTERNE'
+                    else:
+                        key = origin
+                    
+                    grouped_data[key] = grouped_data.get(key, 0) + count
+            
+            # Sort and format results
             result = [
-                {"document_origin_code": origin, "unique_document_count": count}
-                for origin, count in counts.most_common()
+                {
+                    "document_origin_code": origin,
+                    "unique_document_count": count
+                }
+                for origin, count in sorted(
+                    grouped_data.items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )
             ]
-
+            
+            logger.debug(f"Processed {len(results)} rows into {len(result)} grouped results")
             return result
 
         except Exception as e:
             logger.error(f"Error getting document counts: {str(e)}", exc_info=True)
+            logger.debug("Raw results sample:", str(results[:5]) if results else "No results")
             return []
 
     @ttl_cache(ttl_seconds=300)  # Cache for 5 minutes
     async def get_recent_document_counts(self) -> List[Dict[str, Any]]:
         """Vectorized recent document counts using numpy"""
         query = """
-        SELECT /*+ PARALLEL(4) */
-            d.DOCUMENT_ORIGIN_CODE,
-            COUNT(DISTINCT d.DOCUMENT_NUM) as DOC_COUNT
-        FROM DWH.DWH_DOCUMENT PARTITION(
-            FOR(TRUNC(SYSDATE)) 
-            FOR(TRUNC(SYSDATE)-1)
-            FOR(TRUNC(SYSDATE)-2)
-            FOR(TRUNC(SYSDATE)-3)
-            FOR(TRUNC(SYSDATE)-4)
-            FOR(TRUNC(SYSDATE)-5)
-            FOR(TRUNC(SYSDATE)-6)
-            FOR(TRUNC(SYSDATE)-7)
-        ) d
-        GROUP BY d.DOCUMENT_ORIGIN_CODE
+            SELECT /*+ PARALLEL(4) */
+                d.DOCUMENT_ORIGIN_CODE,
+                COUNT(DISTINCT d.DOCUMENT_NUM) as DOC_COUNT
+            FROM DWH.DWH_DOCUMENT d
+            WHERE TRUNC(d.DOCUMENT_DATE) >= TRUNC(SYSDATE - 7)
+            AND TRUNC(d.DOCUMENT_DATE) <= TRUNC(SYSDATE)
+            GROUP BY d.DOCUMENT_ORIGIN_CODE
         """
 
         try:
@@ -294,28 +380,26 @@ class DatabaseQualityChecker:
     @ttl_cache(ttl_seconds=3600)  # Cache for 1 hour
     async def get_document_metrics(self) -> Dict[str, float]:
         """Optimized document metrics query with Python-side calculations"""
-        # Simplified query that just gets the delay days
         query = """
         SELECT /*+ PARALLEL(4) */
             ROUND(UPDATE_DATE - DOCUMENT_DATE, 2) AS DELAY_DAYS
         FROM DWH.DWH_DOCUMENT
-        WHERE 
+        WHERE
             UPDATE_DATE >= ADD_MONTHS(TRUNC(SYSDATE, 'MM'), -1)
             AND DOCUMENT_ORIGIN_CODE != 'RDV_DOCTOLIB'
             AND UPDATE_DATE IS NOT NULL
             AND DOCUMENT_DATE IS NOT NULL
         """
-
         try:
             results = await self.execute_query(query)
-
-            # Convert to numpy array for efficient calculations
-            delays = np.array([row[0] for row in results if row[0] is not None])
-
+            # Convert Decimal to float during array creation
+            delays = np.array([float(row[0]) for row in results if row[0] is not None])
+            
             if len(delays) == 0:
+                logger.warning("No valid document delay data found")
                 return {}
-
-            return {
+                
+            metrics = {
                 "min_delay": float(np.min(delays)),
                 "q1": float(np.percentile(delays, 25)),
                 "median": float(np.percentile(delays, 50)),
@@ -323,97 +407,130 @@ class DatabaseQualityChecker:
                 "max_delay": float(np.max(delays)),
                 "avg_delay": float(np.round(np.mean(delays), 2)),
             }
-
+            
+            logger.debug(f"Calculated metrics from {len(delays)} documents: {metrics}")
+            return metrics
+            
         except Exception as e:
             logger.error(f"Error calculating document metrics: {str(e)}", exc_info=True)
-            return {}
+            return {}@cache_with_ttl(seconds=300)
+        
 
-    @ttl_cache(ttl_seconds=300)
+
+
+    @cache_with_ttl(seconds=300)
     async def get_archive_status(self) -> Dict[str, Any]:
-        """Chunked processing version for very large datasets"""
-        base_query = """
-        SELECT /*+ PARALLEL(4) INDEX(d PK_DWH_DOCUMENT) */
-            d.DOCUMENT_DATE,
-            d.DOCUMENT_ORIGIN_CODE,
-            COUNT(*) OVER () as total_rows
-        FROM DWH.DWH_DOCUMENT d
-        WHERE d.DOCUMENT_DATE >= :start_date
-        AND d.DOCUMENT_DATE < :end_date
+        """High-performance archive status calculation with pre-aggregated data"""
+        query = """
+        WITH stats AS (
+            SELECT /*+ PARALLEL(8) */
+                MIN(DOCUMENT_DATE) as MIN_GLOBAL_DATE
+            FROM DWH.DWH_DOCUMENT
+            WHERE DOCUMENT_DATE IS NOT NULL
+        ),
+        date_stats AS (
+            SELECT 
+                TRUNC(d.DOCUMENT_DATE, 'MONTH') as MONTH_DATE,
+                d.DOCUMENT_ORIGIN_CODE,
+                COUNT(*) as DOC_COUNT,
+                s.MIN_GLOBAL_DATE
+            FROM DWH.DWH_DOCUMENT d
+            CROSS JOIN stats s
+            WHERE d.DOCUMENT_DATE IS NOT NULL
+            GROUP BY 
+                TRUNC(d.DOCUMENT_DATE, 'MONTH'),
+                d.DOCUMENT_ORIGIN_CODE,
+                s.MIN_GLOBAL_DATE
+        )
+        SELECT 
+            CAST(MONTH_DATE AS TIMESTAMP) as MONTH_DATE,
+            DOCUMENT_ORIGIN_CODE,
+            DOC_COUNT,
+            CAST(MIN_GLOBAL_DATE AS TIMESTAMP) as MIN_GLOBAL_DATE
+        FROM date_stats
         """
-
+        
         try:
-            # Initialize accumulators
-            oldest_date = None
-            suppress_counts = {}
-            total_to_suppress = 0
-
-            # Calculate date ranges for chunking
+            # Pre-calculate cutoff date
             current_date = datetime.now()
             cutoff_date = current_date - relativedelta(months=240)
-
-            # Process in 1-year chunks
-            # Start 10 years before cutoff
-            chunk_start = cutoff_date - relativedelta(years=10)
-            chunk_end = current_date
-
-            while chunk_start < chunk_end:
-                next_chunk = chunk_start + relativedelta(years=1)
-
-                # Get chunk of data
-                results = await self.execute_query(
-                    base_query,
-                    {"start_date": chunk_start, "end_date": min(next_chunk, chunk_end)},
-                )
-
-                if not results:
-                    break
-
-                # Process chunk with numpy
-                dates = np.array([r[0] for r in results], dtype="datetime64[s]")
-                origins = np.array([r[1] for r in results])
-
-                # Update oldest date
-                chunk_min = np.min(dates) if len(dates) > 0 else None
-                oldest_date = min(oldest_date, chunk_min) if oldest_date else chunk_min
-
-                # Count documents to suppress
-                suppress_mask = dates < np.datetime64(cutoff_date)
-                chunk_suppress = np.sum(suppress_mask)
-                total_to_suppress += chunk_suppress
-
-                if chunk_suppress > 0:
-                    # Count by origin
-                    suppress_origins = origins[suppress_mask]
-                    unique, counts = np.unique(suppress_origins, return_counts=True)
-                    for origin, count in zip(unique, counts):
-                        suppress_counts[origin] = suppress_counts.get(origin, 0) + count
-
-                chunk_start = next_chunk
-
-            # Calculate archive period
-            archive_period = (
-                (current_date - oldest_date).days / 365.25 if oldest_date else 0
-            )
-
-            # Sort suppress counts
-            documents_to_suppress = sorted(
-                suppress_counts.items(), key=lambda x: x[1], reverse=True
-            )
-
+            
+            # Fetch pre-aggregated results
+            results = await self.execute_query(query)
+            
+            # Early return if no results
+            if not results:
+                return {
+                    "archive_period": 0,
+                    "total_documents_to_suppress": 0,
+                    "documents_to_suppress": []
+                }
+            
+            # Convert results to numpy arrays
+            dates = np.array([row[0] for row in results], dtype='datetime64[ns]')
+            origins = np.array([str(row[1]) for row in results])
+            counts = np.array([int(row[2]) for row in results])
+            min_date = np.datetime64(results[0][3])  # Global min date
+            
+            # Calculate archive period in years
+            days_diff = (np.datetime64(current_date) - min_date) / np.timedelta64(1, 'D')
+            archive_period = days_diff / 365.25
+            
+            # Find documents to suppress
+            cutoff_ts = np.datetime64(cutoff_date)
+            suppress_mask = dates < cutoff_ts
+            
+            if np.any(suppress_mask):
+                # Get unique origins and sum their counts
+                unique_origins, indices = np.unique(origins[suppress_mask], return_inverse=True)
+                suppress_counts = np.zeros(len(unique_origins), dtype=int)
+                np.add.at(suppress_counts, indices, counts[suppress_mask])
+                
+                # Sort by count in descending order
+                sort_idx = np.argsort(-suppress_counts)
+                
+                # Convert numpy types to Python native types
+                documents_to_suppress = [
+                    (str(origin), int(count)) 
+                    for origin, count in zip(
+                        unique_origins[sort_idx],
+                        suppress_counts[sort_idx]
+                    )
+                ]
+                total_to_suppress = int(np.sum(suppress_counts))
+            else:
+                documents_to_suppress = []
+                total_to_suppress = 0
+            
             return {
-                "archive_period": float(archive_period),
+                "archive_period": round(float(archive_period), 2),
                 "total_documents_to_suppress": int(total_to_suppress),
-                "documents_to_suppress": documents_to_suppress,
+                "documents_to_suppress": documents_to_suppress
             }
-
+                
         except Exception as e:
             logger.error(f"Error getting archive status: {str(e)}", exc_info=True)
+            logger.debug("Exception details:", exc_info=True)
             return {
                 "archive_period": 0,
                 "total_documents_to_suppress": 0,
-                "documents_to_suppress": [],
+                "documents_to_suppress": []
             }
 
+
+    async def execute_query_in_chunks(self, query: str, chunk_size: int = 10000):
+        """Helper function to execute query and yield results in chunks"""
+        offset = 0
+        while True:
+            paginated_query = f"""
+            {query}
+            OFFSET {offset} ROWS FETCH NEXT {chunk_size} ROWS ONLY
+            """
+            chunk = await self.execute_query(paginated_query)
+            if not chunk:
+                break
+            yield chunk
+            offset += chunk_size
     @staticmethod
     def extract_year(dates: np.ndarray) -> np.ndarray:
         """Extract years from datetime array efficiently"""
@@ -426,79 +543,107 @@ class DatabaseQualityChecker:
 
 
     async def get_document_counts_batch(self, origin_codes: List[str]) -> Dict[str, List[Dict[str, Any]]]:
-        """Get both yearly and monthly counts in one query using numpy"""
+        """High-performance document counts using pre-aggregation and vectorized operations"""
         placeholders = ', '.join(f':code{i}' for i in range(len(origin_codes)))
         
         # Calculate date bounds
         end_date = datetime.now().replace(day=1) + relativedelta(months=1)
         start_date = end_date - relativedelta(months=12)
         
-        query = f"""
-        SELECT /*+ PARALLEL(4) INDEX(d PK_DWH_DOCUMENT) */
-            d.DOCUMENT_ORIGIN_CODE,
-            d.DOCUMENT_NUM,
-            d.DOCUMENT_DATE,
-            d.UPDATE_DATE
-        FROM DWH.DWH_DOCUMENT d
-        WHERE d.DOCUMENT_ORIGIN_CODE IN ({placeholders})
+        yearly_query = f"""
+        SELECT /*+ PARALLEL(8) */
+            DOCUMENT_ORIGIN_CODE,
+            EXTRACT(YEAR FROM UPDATE_DATE) as YEAR,
+            COUNT(DISTINCT DOCUMENT_NUM) as DOC_COUNT
+        FROM DWH.DWH_DOCUMENT
+        WHERE DOCUMENT_ORIGIN_CODE IN ({placeholders})
+            AND UPDATE_DATE IS NOT NULL
+        GROUP BY 
+            DOCUMENT_ORIGIN_CODE,
+            EXTRACT(YEAR FROM UPDATE_DATE)
+        ORDER BY 
+            DOCUMENT_ORIGIN_CODE,
+            YEAR
+        """
+        
+        monthly_query = f"""
+        SELECT /*+ PARALLEL(8) */
+            DOCUMENT_ORIGIN_CODE,
+            TO_CHAR(TRUNC(DOCUMENT_DATE, 'MM'), 'YYYY-MM-DD') as MONTH_DATE,
+            COUNT(DISTINCT DOCUMENT_NUM) as DOC_COUNT
+        FROM DWH.DWH_DOCUMENT
+        WHERE DOCUMENT_ORIGIN_CODE IN ({placeholders})
+            AND DOCUMENT_DATE >= :start_date
+            AND DOCUMENT_DATE < :end_date
+        GROUP BY 
+            DOCUMENT_ORIGIN_CODE,
+            TRUNC(DOCUMENT_DATE, 'MM')
+        ORDER BY 
+            DOCUMENT_ORIGIN_CODE,
+            MONTH_DATE
         """
         
         try:
-            params = {f'code{i}': code for i, code in enumerate(origin_codes)}
-            results = await self.execute_query(query, params)
-            
-            if not results:
-                return {"yearly": [], "monthly": []}
-
-            # Convert to numpy arrays
-            data = np.array(results, dtype=object)
-            origins = data[:, 0]
-            doc_nums = data[:, 1]
-            doc_dates = np.array(data[:, 2], dtype='datetime64[ns]')
-            update_dates = np.array(data[:, 3], dtype='datetime64[ns]')
-
-            # Process yearly counts
-            years = self.extract_year(update_dates)
-            year_combinations = np.unique(np.array(list(zip(origins, years))), axis=0)
-            
-            yearly_counts = []
-            for origin, year in year_combinations:
-                mask = (origins == origin) & (years == year)
-                unique_docs = len(np.unique(doc_nums[mask]))
-                yearly_counts.append({
-                    "document_origin_code": origin,
-                    "year": int(year),
-                    "count": int(unique_docs)
-                })
-
-            # Process monthly counts (only for recent dates)
-            recent_mask = (doc_dates >= np.datetime64(start_date)) & (doc_dates < np.datetime64(end_date))
-            recent_origins = origins[recent_mask]
-            recent_doc_nums = doc_nums[recent_mask]
-            recent_dates = doc_dates[recent_mask]
-
-            months = self.extract_month(recent_dates)
-            month_combinations = np.unique(np.array(list(zip(recent_origins, months))), axis=0)
-            
-            monthly_counts = []
-            for origin, month in month_combinations:
-                mask = (recent_origins == origin) & (months == month)
-                unique_docs = len(np.unique(recent_doc_nums[mask]))
-                monthly_counts.append({
-                    "document_origin_code": origin,
-                    "month": np.datetime64(month).astype(datetime).strftime("%Y-%m-%d"),
-                    "count": int(unique_docs)
-                })
-
-            return {
-                "yearly": sorted(yearly_counts, key=lambda x: (x["document_origin_code"], x["year"])),
-                "monthly": sorted(monthly_counts, key=lambda x: (x["document_origin_code"], x["month"]))
+            # Prepare parameters
+            params = {
+                **{f'code{i}': code for i, code in enumerate(origin_codes)},
+                'start_date': start_date,
+                'end_date': end_date
             }
-
+            
+            # Execute both queries concurrently
+            yearly_results, monthly_results = await asyncio.gather(
+                self.execute_query(yearly_query, params),
+                self.execute_query(monthly_query, params)
+            )
+            
+            result = {"yearly": [], "monthly": []}
+            
+            # Process yearly data
+            if yearly_results:
+                # Create arrays separately to handle types correctly
+                origins = np.array([row[0] for row in yearly_results])
+                years = np.array([int(row[1]) for row in yearly_results])
+                counts = np.array([int(row[2]) for row in yearly_results])
+                
+                result["yearly"] = [
+                    {
+                        "document_origin_code": str(origin),
+                        "year": int(year),
+                        "count": int(count)
+                    }
+                    for origin, year, count in zip(origins, years, counts)
+                ]
+            
+            # Process monthly data with string dates from SQL
+            if monthly_results:
+                monthly_data = np.array([
+                    (str(row[0]), str(row[1]), int(row[2]))
+                    for row in monthly_results if row[2] > 0  # Only include months with documents
+                ], dtype=[('origin', 'U50'), ('month', 'U10'), ('count', 'i4')])
+                
+                result["monthly"] = [
+                    {
+                        "document_origin_code": str(origin),
+                        "month": month,  # Already in YYYY-MM-DD format from SQL
+                        "count": int(count)
+                    }
+                    for origin, month, count in zip(
+                        monthly_data['origin'],
+                        monthly_data['month'],
+                        monthly_data['count']
+                    )
+                ]
+            
+            return result
+                
         except Exception as e:
             logger.error(f"Error getting batch document counts: {str(e)}", exc_info=True)
+            logger.debug("Exception details:", exc_info=True)
             return {"yearly": [], "monthly": []}
-        
+
+
+
     async def get_all_statistics_with_timing(self) -> Dict[str, Any]:
         """Version with timing information for performance monitoring"""
         import time

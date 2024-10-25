@@ -8,7 +8,6 @@ Last Updated: 2024-10-22
 - [/] In Progress
 - [x] Done
 
-
 ## API DEVELOPEMENTS
 - [X] Develop FrontEnd 
 - [ ] Test and debug Frontend on real data
@@ -23,6 +22,8 @@ Last Updated: 2024-10-22
 - [ ] Verify if structured data is properly imported
 - [ ] Linear graph on movement & stays
 - [ ] % missing and % aberrant
+- [ ] Sur 5 ans, combien de patients est venu au moins une fois par an => patients en suivi chronique
+
 
 ## GENERAL IMPROVEMENTS
 - [x] Add red median line to each graph
@@ -79,7 +80,10 @@ Last Updated: 2024-10-22
   - Charlotte Monthéan
 - [ ] Decide on monitoring DIM quality activity
 
-
+## NON ACTIVITE
+- Le % de personnes qui se sont connectés 1 à 3 fois et plus jamais après 
+- Fichier pour récupérer ces personnes là 
+- Nombre de patients qui ne vont plus être pertinent à cause de la suppression de l'archivage
 
 V2 : 
 
@@ -89,3 +93,5 @@ V2 :
 
 ## FEASIBILITY TAB
 - [ ] Implement cohort with EASYDORE code (not immediate priority)
+
+
