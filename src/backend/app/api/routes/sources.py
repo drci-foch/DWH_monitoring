@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 import logging
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api", tags=["documents"])
+router = APIRouter(prefix="/api", tags=["sources"])
 
 async def validate_origin_codes(
     origin_codes: str, db_checker: DatabaseQualityChecker
