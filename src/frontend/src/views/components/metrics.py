@@ -99,3 +99,98 @@ class MetricsDisplay:
                 "20 ans",
                 help="Les documents de plus de 20 ans (240 mois) sont marqués pour suppression",
             )
+
+    @staticmethod
+    def display_connector_statistics(yearly_data: List[Dict], monthly_data: List[Dict]):
+        """Display statistical analysis for connectors."""
+        import pandas as pd
+        
+        # Create DataFrames
+        df_yearly = pd.DataFrame(yearly_data)
+        df_monthly = pd.DataFrame(monthly_data)
+        df_monthly['month'] = pd.to_datetime(df_monthly['month'])
+        
+        # Calculate statistics per connector
+        stats_cols = st.columns(2)
+        
+        with stats_cols[0]:
+            st.subheader("📊 Analyses Annuelles")
+            
+            # Calculate year-over-year growth
+            for connector in df_yearly['document_origin_code'].unique():
+                connector_data = df_yearly[df_yearly['document_origin_code'] == connector]
+                growth = connector_data.set_index('year')['count'].pct_change() * 100
+                total_docs = connector_data['count'].sum()
+                avg_growth = growth.mean()
+                
+                with st.expander(f"🔗 {connector}"):
+                    st.metric(
+                        "Volume Total",
+                        f"{total_docs:,} documents",
+                        help="Nombre total de documents sur toute la période"
+                    )
+                    st.metric(
+                        "Croissance Moyenne Annuelle",
+                        f"{avg_growth:.1f}%",
+                        help="Croissance moyenne d'une année sur l'autre"
+                    )
+                    
+                    # # Show yearly progression
+                    # yearly_counts = connector_data.set_index('year')['count']
+                    # st.write("Progression annuelle:")
+                    # for year, count in yearly_counts.items():
+                    #     st.write(f"- {year}: {count:,} documents")
+        
+        with stats_cols[1]:
+            st.subheader("📊 Analyse Mensuelle")
+            
+            # Calculate monthly statistics
+            for connector in df_monthly['document_origin_code'].unique():
+                connector_data = df_monthly[df_monthly['document_origin_code'] == connector]
+                
+                with st.expander(f"🔗 {connector}"):
+                    monthly_avg = connector_data['count'].mean()
+                    monthly_std = connector_data['count'].std()
+                    peak_month = connector_data.loc[connector_data['count'].idxmax()]
+                    low_month = connector_data.loc[connector_data['count'].idxmin()]
+                    
+                    st.metric(
+                        "Moyenne Mensuelle",
+                        f"{monthly_avg:.0f} documents",
+                        help="Nombre moyen de documents ajoutés par mois"
+                    )
+                    st.metric(
+                        "Écart-Type",
+                        f"{monthly_std:.0f}",
+                        help="Mesure de la variabilité mensuelle"
+                    )
+                    st.write(f"🔼 Pic: {peak_month['month'].strftime('%Y-%m')}: {peak_month['count']:,} documents")
+                    st.write(f"⬇️ Minimum: {low_month['month'].strftime('%Y-%m')}: {low_month['count']:,} documents")
+        
+        # Add overall statistics
+        st.subheader("📊 Vue d'Ensemble")
+        total_cols = st.columns(3)
+        
+        with total_cols[0]:
+            total_yearly = df_yearly['count'].sum()
+            st.metric(
+                "Volume Total",
+                f"{total_yearly:,}",
+                help="Nombre total de documents tous connecteurs confondus"
+            )
+            
+        with total_cols[1]:
+            avg_monthly = df_monthly.groupby('document_origin_code')['count'].mean().mean()
+            st.metric(
+                "Moyenne Mensuelle Globale",
+                f"{avg_monthly:.0f}",
+                help="Moyenne mensuelle de documents ajoutés sur tous connecteurs confondus"
+            )
+            
+        with total_cols[2]:
+            active_connectors = len(df_monthly['document_origin_code'].unique())
+            st.metric(
+                "Connecteurs Actifs",
+                active_connectors,
+                help="Nombre de connecteurs actifs sur les 12 derniers mois"
+            )

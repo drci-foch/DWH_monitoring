@@ -1,7 +1,7 @@
 # TODO List
 
 Version: 1.0
-Last Updated: 2024-10-22
+Last Updated: 2024-10-28
 
 ## Status Legend
 - [ ] Not Started
@@ -12,6 +12,7 @@ Last Updated: 2024-10-22
 - [x] Develop FrontEnd 
 - [x] Test and debug Frontend on real data
 - [x] Test Optimized CRUD :: crud_to_test.py
+- [/] Test cache for sources MONITORING
 
 ## PMSI TAB
 - [ ] Date of last upload

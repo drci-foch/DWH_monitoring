@@ -5,6 +5,9 @@ import logging
 import plotly.graph_objects as go
 import os
 import sys
+import pandas as pd
+import plotly.express as px
+from scipy import stats
 
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../../"))
@@ -160,78 +163,331 @@ class Dashboard:
                 st.metric(label, value)
 
     def display_document_distribution(self, use_simulation: bool):
-        """Display document distribution section."""
-        st.header("📑 Distribution des Documents")
-        with st.expander("ℹ️ À propos de la Distribution des Documents"):
+        """Display document distribution section with enhanced statistics."""
+        with st.expander("ℹ️ À propos de la distribution des documents"):
             st.markdown("""
-            **Regroupement des Données:**
-            - Les documents dont le code d'origine commence par 'Easily' sont regroupés sous 'Easily'
-            - Les documents dont le code d'origine commence par 'DOC_EXTERNE' sont regroupés sous 'DOC_EXTERNE'
-            - Les autres documents conservent leur code d'origine initial
+            ### 📊 Vue d'Ensemble
+            Cette section analyse la distribution des documents dans l'EDS selon différentes perspectives :
             
-            **Périodes:**
-            - **Historique Complet**: Affiche tous les documents uniques sur l'ensemble des périodes
-            - **Documents Récents**: Affiche les documents mis à jour ces 7 derniers jours
+            **Sources de Données :**
+            - **Historique Complet** : Ensemble des documents uniques sur toute la période
+            - **Documents Récents** : Documents des 7 derniers jours
             
-            Les documents sont comptabilisés en utilisant des DOCUMENT_NUM distincts pour éviter les doublons.
+            **Métriques Clés :**
+            - **Volume Total** : Nombre total de documents dans l'EDS
+            - **Moyenne par Type** : Distribution moyenne entre les différentes catégories
+            - **Type le Plus Actif** : Catégorie avec le plus grand volume de documents
+            
+            ### 📈 Interprétation des Graphiques
+            
+            **1. Distribution Globale :**
+            - Montre la répartition en pourcentage de chaque type de document
+            - Permet d'identifier les catégories dominantes
+            
+            **2. Analyse Pareto :**
+            - Graphique à barres + ligne cumulative
+            - Aide à identifier les types de documents qui représentent la majorité du volume
+            - Suit le principe 80/20 (20% des types représentent souvent 80% du volume)
+            
+            **3. Corrélation Volume Total vs Récent :**
+            - Compare le volume historique au volume récent
+            - Points au-dessus de la diagonale : plus actifs récemment
+            - Points en-dessous : moins actifs récemment
+            
+            **4. Comparaison et Tendances :**
+            - Met en parallèle les volumes totaux et récents
+            - Permet d'identifier les évolutions et changements de tendances
+            
+            ### 📉 Indicateurs de Performance
+            
+            **Ratio Récent/Total :**
+            - < 0.5 : Activité en baisse
+            - ≈ 1.0 : Activité stable
+            - > 1.5 : Activité en hausse significative
+            
+            **Changements Relatifs :**
+            - 📈 Croissance : Augmentation du volume récent
+            - 📉 Décroissance : Diminution du volume récent
             """)
 
+        st.header("📑 Distribution des Documents")
+        
         doc_counts = self.fetch_data("document_counts", use_simulation)
         recent_doc_counts = self.fetch_data("recent_document_counts", use_simulation)
 
-        if doc_counts or recent_doc_counts:
-            tab1, tab2 = st.tabs(["Historique Complet", "Documents Récents"])
+        if doc_counts and recent_doc_counts:
+            # Convert to DataFrames
+            df_all = pd.DataFrame(doc_counts)
+            df_recent = pd.DataFrame(recent_doc_counts)
+
+            # Merge the data
+            df_merged = pd.merge(
+                df_all.rename(columns={'unique_document_count': 'total_count'}),
+                df_recent.rename(columns={'unique_document_count': 'recent_count'}),
+                on='document_origin_code'
+            )
+
+            tab1, tab2 = st.tabs(["📊 Vue Générale", "📈 Analyses Détaillées"])
 
             with tab1:
-                if doc_counts:
-                    self.chart_display.create_document_distribution_chart(
-                        doc_counts, "Distribution des Documents par Origine"
+                # Metrics Overview
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    total_docs = df_merged['total_count'].sum()
+                    recent_docs = df_merged['recent_count'].sum()
+                    st.metric(
+                        "Volume Total",
+                        f"{total_docs:,}",
+                        f"+{recent_docs:,} derniers 7 jours"
                     )
+
+                with col2:
+                    avg_per_type = df_merged['total_count'].mean()
+                    st.metric(
+                        "Moyenne par Type",
+                        f"{avg_per_type:,.0f}",
+                        f"±{df_merged['total_count'].std():,.0f} (écart-type)"
+                    )
+
+                with col3:
+                    most_active = df_merged.loc[df_merged['total_count'].idxmax()]
+                    st.metric(
+                        "Type le Plus Actif",
+                        most_active['document_origin_code'],
+                        f"{most_active['total_count']:,} documents"
+                    )
+
+                # Distribution Charts
+                self.chart_display.create_document_distribution_chart(
+                    doc_counts, "Distribution Globale des Documents"
+                )
 
             with tab2:
-                if recent_doc_counts:
-                    self.chart_display.create_document_distribution_chart(
-                        recent_doc_counts,
-                        "Distribution des Documents Récents par Origine",
-                    )
+                st.subheader("📊 Analyse Statistique Détaillée")
+                st.info("""                
+                **Le tableau ci-dessous montre :**
+                - La répartition détaillée par type de document
+                - Le pourcentage que représente chaque type
+                - L'activité récente (7 derniers jours)
+                - Le ratio entre l'activité récente et historique
+                """)
+                
 
+                # Calculate additional statistics
+                df_merged['proportion'] = df_merged['total_count'] / total_docs * 100
+                df_merged['recent_ratio'] = df_merged['recent_count'] / df_merged['total_count']
+                
+                # Sort by total count
+                df_stats = df_merged.sort_values('total_count', ascending=False)
+
+                # Display detailed stats table
+                st.write("##### 📋 Statistiques par Type de Document")
+                stats_df = pd.DataFrame({
+                    'Type': df_stats['document_origin_code'],
+                    'Volume Total': df_stats['total_count'].apply(lambda x: f"{x:,}"),
+                    'Part (%)': df_stats['proportion'].apply(lambda x: f"{x:.1f}%"),
+                    '7 Derniers Jours': df_stats['recent_count'].apply(lambda x: f"{x:,}"),
+                    'Ratio Récent/Total': df_stats['recent_ratio'].apply(lambda x: f"{x:.2f}")
+                })
+                st.dataframe(stats_df, use_container_width=True)
+
+                # Activity Analysis
+                st.write("##### 📈 Analyse de l'Activité")
+                st.info("""            
+            **Diagramme de Pareto :**
+            - Les barres bleues montrent la proportion de chaque type
+            - La ligne rouge montre le cumul des proportions
+            - Aide à identifier les types de documents prioritaires
+            
+            **Graphique de Corrélation :**
+            - Compare les volumes récents aux volumes totaux
+            - Plus les points sont proches de la diagonale, plus l'activité est stable
+            - Les points éloignés indiquent des changements d'activité
+            """)
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    # Pareto Chart
+                    cumsum = df_stats['proportion'].cumsum()
+                    fig_pareto = go.Figure()
+                    
+                    fig_pareto.add_trace(go.Bar(
+                        x=df_stats['document_origin_code'],
+                        y=df_stats['proportion'],
+                        name='Proportion'
+                    ))
+                    
+                    fig_pareto.add_trace(go.Scatter(
+                        x=df_stats['document_origin_code'],
+                        y=cumsum,
+                        name='Cumul',
+                        line=dict(color='red'),
+                        yaxis='y2'
+                    ))
+                    
+                    fig_pareto.update_layout(
+                        title="Analyse Pareto des Types de Documents",
+                        yaxis=dict(title="Proportion (%)"),
+                        yaxis2=dict(title="Cumul (%)", overlaying='y', side='right'),
+                        showlegend=True
+                    )
+                    
+                    st.plotly_chart(fig_pareto, use_container_width=True)
+
+                with col2:
+                    # Recent vs Total Scatter
+                    fig_scatter = px.scatter(
+                        df_merged,
+                        x='total_count',
+                        y='recent_count',
+                        text='document_origin_code',
+                        title="Corrélation Volume Total vs Récent"
+                    )
+                    
+                    fig_scatter.update_traces(
+                        textposition='top center',
+                        marker=dict(size=10)
+                    )
+                    
+                    st.plotly_chart(fig_scatter, use_container_width=True)
+
+
+        else:
+            st.warning("Aucune donnée disponible pour la distribution des documents.")
+
+    def display_automated_insights(self, yearly_data: List[Dict], monthly_data: List[Dict]):
+        """Affiche des insights automatisés basés sur l'analyse des données."""
+
+
+        # Conversion en DataFrames
+        df_yearly = pd.DataFrame(yearly_data)
+        df_monthly = pd.DataFrame(monthly_data)
+        print(df_monthly['month'])
+        df_monthly['month'] = pd.to_datetime(df_monthly['month'])
+        print(df_monthly['month'])
+        
+        # Analyse par connecteur
+        for connector in df_yearly['document_origin_code'].unique():
+            with st.expander(f"📊 Analyse - {connector}"):
+                # Données annuelles du connecteur
+                yearly_connector = df_yearly[df_yearly['document_origin_code'] == connector]
+                
+                # Calcul de la croissance annuelle
+                yearly_counts = yearly_connector.set_index('year')['count']
+                yearly_growth = yearly_counts.pct_change() * 100
+                
+                # Tendance générale
+                if len(yearly_counts) >= 2:
+                    overall_growth = ((yearly_counts.iloc[-1] / yearly_counts.iloc[0]) - 1) * 100
+                    #st.write(f"##### Tendance Générale")
+                    st.write(f"🔀 Evolution sur la période : {overall_growth:.1f}% "
+                            f"({yearly_counts.iloc[0]:,} → {yearly_counts.iloc[-1]:,} documents)")
+                    
+                    # Analyse de la croissance
+                    avg_growth = yearly_growth.mean()
+                    growth_color = "🟢" if avg_growth > 0 else "🔴"
+                    st.write(f"{growth_color} Croissance moyenne annuelle : {avg_growth:.1f}%")
+
+                # Données mensuelles du connecteur
+                monthly_connector = df_monthly[df_monthly['document_origin_code'] == connector]
+                
+                if not monthly_connector.empty:
+                    #st.write("##### Analyse Mensuelle")
+                    
+                    # Calcul des statistiques mensuelles
+                    current_month = monthly_connector.iloc[-1]
+                    prev_month = monthly_connector.iloc[-2] if len(monthly_connector) > 1 else None
+                    
+                    if prev_month is not None:
+                        month_growth = ((current_month['count'] / prev_month['count']) - 1) * 100
+                        growth_icon = "📈" if month_growth > 0 else "📉"
+                        st.write(f"{growth_icon} Croissance sur le dernier mois : {month_growth:.1f}%  "
+                                f"({prev_month['count']:,} → {current_month['count']:,})")
+
+                    # Détection des anomalies
+                    mean = monthly_connector['count'].mean()
+                    std = monthly_connector['count'].std()
+                    last_value = current_month['count']
+                    
+                    if abs(last_value - mean) > 2 * std:
+                        if last_value > mean:
+                            st.warning(f"⚠️ Volume inhabituellement élevé le dernier mois "
+                                    f"({last_value:,} vs moyenne de {mean:.0f})")
+                        else:
+                            st.warning(f"⚠️ Volume inhabituellement bas le dernier mois "
+                                    f"({last_value:,} vs moyenne de {mean:.0f})")
+
+                    # Identification des mois exceptionnels
+                    peak_month = monthly_connector.loc[monthly_connector['count'].idxmax()]
+                    low_month = monthly_connector.loc[monthly_connector['count'].idxmin()]
+                    
+                    #st.write("##### Points Remarquables")
+                    st.write(f"🔥 Pic d'activité : {peak_month['month'].strftime('%B %Y')} "
+                            f"avec {peak_month['count']:,} documents")
+                    st.write(f"⬇️ Plus faible activité : {low_month['month'].strftime('%B %Y')} "
+                            f"avec {low_month['count']:,} documents")
+
+
+
+        # Dynamique récente
+        recent_growth = df_monthly.groupby('document_origin_code').agg({
+            'count': ['mean', 'std']
+        })
+        
+        st.write("##### Stabilité des Connecteurs")
+        st.info("""
+        La stabilité est évaluée grâce au Coefficient de Variation (CV) qui mesure la dispersion relative des données :
+        - 🟢 **Stable** (CV ≤ 20%) : Faible variabilité, flux de documents régulier
+        - 🟡 **Variable** (20% < CV < 40%) : Variabilité modérée, possibles variations saisonnières
+        - 🔴 **Très variable** (CV ≥ 40%) : Forte variabilité, possibles anomalies à investiguer
+        
+        *CV = (Écart-type / Moyenne) × 100*
+        """)
+        for connector in recent_growth.index:
+            mean = recent_growth.loc[connector, ('count', 'mean')]
+            std = recent_growth.loc[connector, ('count', 'std')]
+            cv = (std / mean) * 100  # Coefficient de variation
+            
+            stability = "🟢" if cv <= 20 else "🟡" if  20 < cv < 40 else "🔴"
+            st.write(f"{stability} {connector}: "
+                    f"{'Stable' if cv < 20 else 'Variable' if cv < 40 else 'Très variable'} "
+                    f"(CV: {cv:.1f}%)")
+            
     def display_connector_monitoring(self, use_simulation: bool):
         """Display connector monitoring section."""
         try:
             st.header("📈 Monitoring des connecteurs")
 
-            with st.expander("ℹ️ À propos du Monitoring des connecteurs"):
-                st.markdown("""
-                # ... [keep existing markdown] ...
-                """)
 
-            # Get all available origins directly from your API endpoint
+
             origin_codes = [
                 "BIO",
-                "DOC_EXTERNE_DIA",
                 "CYBERLAB",
-                "Easily_SOF",
-                "DOC_EXTERNE_Car",
-                "FOCH_EFR",
+                "DOC_EXTERNE"
                 "DOC_EXTERNE_Ari",
-                "RDV_DOCTOLIB",
-                "Easily_DIA",
+                "DOC_EXTERNE_Car",
                 "DOC_EXTERNE_COP",
-                "Easily_Car",
+                "DOC_EXTERNE_DIA",
                 "DOC_EXTERNE_Med",
-                "Easily_echo_cardio",
-                "Easily_COP",
-                "Easily_EFR",
-                "Easily_Patientys",
-                "Easily_Muse",
-                "Easily_Med",
-                "Easily_CeS",
                 "DOC_EXTERNE_PCA",
+                "Easily",
+                "Easily_Car",
+                "Easily_CeS",
+                "Easily_COP",
+                "Easily_DIA",
+                "Easily_echo_cardio",
+                "Easily_EFR",
+                "Easily_Med",
+                "Easily_Muse",
+                "Easily_Patientys",
+                "Easily_SOF",
+                "FOCH_EFR",
+                "RDV_DOCTOLIB",
             ]
 
             # Initialize session state for selected origins
             if "selected_origins" not in st.session_state:
-                # Take first 5 origins as default
                 st.session_state.selected_origins = (
                     origin_codes[:5] if len(origin_codes) > 5 else origin_codes
                 )
@@ -241,7 +497,7 @@ class Dashboard:
                 )
 
             if "select_all" not in st.session_state:
-                st.session_state.select_all = False
+                st.session_state.select_all = True
 
             def handle_select_all():
                 st.session_state.selected_origins = origin_codes.copy()
@@ -257,26 +513,91 @@ class Dashboard:
 
             col1, col2 = st.columns([3, 1])
 
-            with col1:
-                selected = st.multiselect(
-                    "Sélectionner les Origines de Documents à Afficher",
-                    options=origin_codes,
-                    default=[
-                        code
-                        for code in st.session_state.selected_origins
-                        if code in origin_codes
-                    ],
-                    key="multiselect_value",
-                    help="Choisir les origines de documents à afficher dans les graphiques",
-                )
+            # with col1:
+            #     selected = st.multiselect(
+            #         "Sélectionner les Origines de Documents à Afficher",
+            #         options=origin_codes,
+            #         default=[
+            #             code
+            #             for code in st.session_state.selected_origins
+            #             if code in origin_codes
+            #         ],
+            #         key="multiselect_value",
+            #         help="Choisir les origines de documents à afficher dans les graphiques",
+            #     )
 
-            with col2:
-                st.button("Tout Sélectionner", on_click=handle_select_all)
+            # with col2:
+            #     st.button("Tout Sélectionner", on_click=handle_select_all)
 
-            if selected:
-                self.display_time_series_data(selected, use_simulation)
-            else:
-                st.info("Veuillez sélectionner au moins une origine de documents.")
+            # if selected:
+            #     self.display_time_series_data(selected, use_simulation)
+            # else:
+            #     st.info("Veuillez sélectionner au moins une origine de documents.")
+
+            # Create tabs for different views
+            tab1, tab2, tab3 = st.tabs(["📈 Graphiques", "📊 Statistiques", "ℹ️ Analyse"])
+            
+            with tab1:
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    selected = st.multiselect(
+                        "Sélectionner les Origines de Documents à Afficher",
+                        options=origin_codes,
+                        default=[
+                            code
+                            for code in st.session_state.selected_origins
+                            if code in origin_codes
+                        ],
+                        key="multiselect_value_graphs",
+                        help="Choisir les origines de documents à afficher dans les graphiques",
+                    )
+
+                with col2:
+                    st.button(
+                        "Tout Sélectionner",
+                        on_click=handle_select_all,
+                        key="select_all_button_graphs"  # Ajout d'une clé unique pour le bouton
+                    )
+
+                if selected:
+                    self.display_time_series_data(selected, use_simulation)
+                else:
+                    st.info("Veuillez sélectionner au moins une origine de documents.")
+                    
+            with tab2:
+                if not selected:
+                    st.info("Veuillez sélectionner des connecteurs dans l'onglet Graphiques pour voir leurs statistiques.")
+                else:
+                    # Fetch data for statistics
+                    origin_codes_str = ",".join(selected)
+                    params = {"origin_codes": origin_codes_str}
+                    
+                    yearly_data = self.fetch_data(
+                        "document_counts_by_year", use_simulation, params=params
+                    )
+                    monthly_data = self.fetch_data(
+                        "recent_document_counts_by_month", use_simulation, params=params
+                    )
+                    
+                    if yearly_data and monthly_data:
+                        self.metrics_display.display_connector_statistics(yearly_data, monthly_data)
+                    else:
+                        st.warning("Données insuffisantes pour calculer les statistiques.")
+                        
+            with tab3:
+                st.write("#### 🔍 Analyse des Tendances")
+                # st.info("""
+                # Cette vue permet d'identifier :
+                # - Les variations significatives de volume
+                # - Les tendances de croissance par connecteur
+                # - Les périodes de pic et de creux d'activité
+                # - Les anomalies potentielles dans les flux de données
+                # """)
+                
+                if selected and yearly_data and monthly_data:
+                    # Add automated insights based on the data
+                    self.display_automated_insights(yearly_data, monthly_data)
 
         except Exception as e:
             print(f"\n=== Debug: Error in display_connector_monitoring ===")
@@ -284,6 +605,7 @@ class Dashboard:
             print(f"Error message: {str(e)}")
             st.error(f"Une erreur s'est produite : {str(e)}")
             logger.error(f"Error in display_connector_monitoring: {str(e)}")
+
 
     def display_time_series_data(
         self, selected_origins: List[str], use_simulation: bool
@@ -346,6 +668,8 @@ class Dashboard:
 
     def display_user_activity(self, use_simulation: bool):
         """Display user activity section."""
+        
+
         st.header("👥 Activité Utilisateurs")
         with st.expander("ℹ️ À propos de l'Activité Utilisateurs"):
             st.markdown("""
@@ -357,8 +681,15 @@ class Dashboard:
 
         top_users = self.fetch_data("top_users", use_simulation)
 
+
+        
         current_year_users = self.fetch_data("top_users_current_year", use_simulation)
 
+
+        print("\n=== Debug: Users Request ===")
+        print(f"Top users ALL PERIOD: {top_users}")
+        print(f"Top users CURRENT YEAR: {current_year_users}")
+        
         if top_users or current_year_users:
             tab1, tab2 = st.tabs(["Historique Complet", "Année en Cours"])
 
@@ -383,7 +714,7 @@ class Dashboard:
             st.markdown("""
             **Période d'Archive:**
             - Calculée depuis la date de création du document (DOCUMENT_DATE) du plus ancien document
-            - Les documents de plus de 20 ans sont candidats à l'archivage/suppression
+            - Les documents de plus de 20 ans sont candidats à la suppression
             """)
 
         archive_data = self.fetch_data("archive_status", use_simulation)
@@ -461,7 +792,7 @@ class Dashboard:
                 ### 🗄️ Statut d'Archivage
                 <div style='background-color: #f0f2f6; padding: 1em; border-radius: 10px; margin-bottom: 1em;'>
                 ✦ Période d'archivage globale<br>
-                ✦ Documents éligibles à l'archivage<br>
+                ✦ Documents éligibles à la suppression<br>
                 ✦ Distribution par type de document
                 </div>
             """,
@@ -514,7 +845,7 @@ class Dashboard:
         self.setup_page_config()
 
         st.title("Monitoring de l'Entrepôt de Donnée de Santé")
-        st.caption("Vue d'ensemble complète des indicateurs de la base de données")
+        st.caption("Vue d'ensemble des indicateurs de la base de données")
 
         use_simulation = self.setup_sidebar()
 
