@@ -16,15 +16,12 @@ async def validate_origin_codes(
             status_code=400, detail="Origin codes parameter is required"
         )
     
-    # Get available origins from database
     available_origins = set(await db_checker.get_document_origins())
     
-    # Process and validate requested origins
     requested_origins = [
         code.strip() for code in origin_codes.split(",") if code.strip()
     ]
     
-    # Check if all requested origins are valid
     invalid_origins = set(requested_origins) - available_origins
     if invalid_origins:
         raise HTTPException(
@@ -67,10 +64,8 @@ async def get_document_counts_by_year(
         logger.debug(f"Processing yearly request for origin codes: {origin_codes}")
         validated_origins = await validate_origin_codes(origin_codes, db_checker)
         
-        # Get yearly data
         yearly_data = await get_batch_data(validated_origins, db_checker, "yearly")
         
-        # Return empty list instead of 404 if no data found
         if not yearly_data:
             logger.info(f"No yearly data found for valid origin codes: {origin_codes}")
             return []
