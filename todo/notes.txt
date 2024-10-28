@@ -18,6 +18,13 @@ Last Updated: 2024-10-22
 - [ ] Time period concerned
 - [ ] Identify gaps (linear graph counting PMSI document creation dates, not upload)
 
+## SCHEMA TAB
+- [ ] Change env to add redis
+- [ ] pip install networkx redis and update requirements
+- [ ] test todo/add_schema_relation.py
+
+
+
 ## GENERAL IMPROVEMENTS
 - [x] Add red median line to each graph
 
