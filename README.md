@@ -37,7 +37,7 @@ DWH_monitoring/
 │   │   │   ├── crud.py
 │   │   │   ├── dependencies.py
 │   │   │   └── main.py
-│   │   └── .env
+│   ├── .env
 │   └── frontend/
          ├── src/
          │   ├── api/

@@ -1,7 +1,7 @@
 # TODO List
 
 Version: 1.0
-Last Updated: 2024-10-22
+Last Updated: 2024-10-28
 
 ## Status Legend
 - [ ] Not Started
@@ -11,9 +11,16 @@ Last Updated: 2024-10-22
 
 
 ## API DEVELOPEMENTS
-- [X] Develop FrontEnd 
-- [ ] Test and debug Frontend on real data
-- [ ] Test Optimized CRUD :: crud_to_test.py
+- [x] Develop FrontEnd 
+- [x] Test and debug Frontend on real data
+- [x] Test Optimized CRUD :: crud_to_test.py
+- [x] Test cache for sources MONITORING
+
+## PMSI TAB
+- [x] Date of last upload
+- [x] Time period concerned
+- [x] Identify gaps (linear graph counting PMSI document creation dates, not upload)
+
 
 ## GENERAL IMPROVEMENTS
 - [x] Add red median line to each graph
@@ -30,15 +37,14 @@ Last Updated: 2024-10-22
   - [x] Remove "Insecte" patients (always a duplicate)
   - [ ] Add differential between INSEE and Foch deaths (Q1, Q2, Q3, Q4)
 
-## DATA QUALITY METRICS TAB
-- [ ] Test to verify dates:
-  - [ ] File: 51341da6-9546-473e-a3c0-3a3d71480dcb
-  - [ ] FOUSSEREAU ANA
-  - [ ] 0300714051
-  - [ ] Created on 20/07/2023
-  - [ ] Modified on 21/07/2023
-  - [ ] Determine which date is considered as DOCUMENT_DATE
-- [ ] Verify if reupload is the last validated document
+## TEST FOR DATES
+- [ ] Test to verify dates: Verify if reupload is the last validated document
+  - File: 51341da6-9546-473e-a3c0-3a3d71480dcb
+  - FOUSSEREAU ANA
+  - 0300714051
+  - Created on 20/07/2023
+  - Modified on 21/07/2023
+  - Determine which date is considered as DOCUMENT_DATE
 - [ ] Same verification for bio
 
 ## NEW INDICATORS TO ADD
@@ -46,20 +52,6 @@ Last Updated: 2024-10-22
 - [x] Add EFR to the graph
 - [x] Current archive period (alert for +20 years)
 - [x] Number of documents to delete from each source
-
-## RDV DOCTOLIB TAB
-- [ ] Monitor activity of each service retrospectively
-- [ ] Access to powerstay database (possibly on easily)
-
-## MOVEMENT & STAYS MONITORING TAB
-- [ ] Verify if structured data is properly imported
-- [ ] Linear graph on movement & stays
-- [ ] % missing and % aberrant
-
-## PMSI TAB
-- [ ] Date of last upload
-- [ ] Time period concerned
-- [ ] Identify gaps (linear graph counting PMSI document creation dates, not upload)
 
 ## USERS TAB
 - [ ] Add service next to user names
@@ -85,10 +77,19 @@ Last Updated: 2024-10-22
   - Phillipe Fernandez
   - Tanguy De Poix
   - Charlotte Monthéan
-- [ ] Decide on monitoring DIM quality activity
-- [ ] Ajouter l'alerte si une personne regarde un dossier trop de fois
-- [ ] Un patient qui a été consulté trop de fois, en tapant un nom prénom sur le haut
+- [ ] Le % de personnes qui se sont connectés 1 à 3 fois et plus jamais après 
+- [ ] Fichier pour récupérer ces personnes là 
 
+V2 : 
+
+## OPTIMIZATION OF THE APPLICATION
+- [ ] Airflow to run all the queries one time per day, save it in a db and get all the info in streamlit -> get versionning
 
 ## FEASIBILITY TAB
 - [ ] Implement cohort with EASYDORE code (not immediate priority)
+
+## MOVEMENT & STAYS MONITORING TAB
+- [ ] Verify if structured data is properly imported
+- [ ] Linear graph on movement & stays
+- [ ] % missing and % aberrant
+- [ ] Sur 5 ans, combien de patients est venu au moins une fois par an => patients en suivi chronique

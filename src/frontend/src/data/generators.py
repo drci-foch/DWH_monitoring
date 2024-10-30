@@ -1,7 +1,55 @@
 from datetime import datetime, timedelta
 import random
 import math
+import numpy as np
 from typing import Dict, List, Any
+import logging 
+
+logger = logging.getLogger(__name__)
+
+
+def generate_document_metrics() -> Dict[str, float]:
+    """
+    Generate simulated document metrics data.
+    
+    Returns:
+        Dict[str, float]: Document processing delay metrics
+    """
+    try:
+        np.random.seed(42)  # For reproducible results
+        n_samples = 1000
+        
+        # Generate realistic-looking delays with lognormal distribution
+        base_delays = np.random.lognormal(
+            mean=np.log(5),  # Center around 5 days
+            sigma=0.6,       # Spread
+            size=n_samples
+        )
+        
+        # Add some noise and outliers
+        noise = np.random.normal(0, 0.1, n_samples)
+        delays = np.clip(base_delays + noise, 0.5, 30.0)  # Clip to reasonable range
+        
+        return {
+            "min_delay": float(np.min(delays)),
+            "q1": float(np.percentile(delays, 25)),
+            "median": float(np.percentile(delays, 50)),
+            "q3": float(np.percentile(delays, 75)),
+            "max_delay": float(np.max(delays)),
+            "avg_delay": float(np.round(np.mean(delays), 2))
+        }
+    except Exception as e:
+        logger.error(f"Error generating document metrics: {str(e)}", exc_info=True)
+        return {
+            "min_delay": 0.5,
+            "q1": 2.0,
+            "median": 4.0,
+            "q3": 6.0,
+            "max_delay": 30.0,
+            "avg_delay": 5.0
+        }
+
+
 
 def generate_document_counts() -> List[Dict[str, Any]]:
     """
