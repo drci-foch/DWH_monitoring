@@ -12,18 +12,12 @@ Last Updated: 2024-10-28
 - [x] Develop FrontEnd 
 - [x] Test and debug Frontend on real data
 - [x] Test Optimized CRUD :: crud_to_test.py
-- [/] Test cache for sources MONITORING
+- [x] Test cache for sources MONITORING
 
 ## PMSI TAB
-- [ ] Date of last upload
-- [ ] Time period concerned
-- [ ] Identify gaps (linear graph counting PMSI document creation dates, not upload)
-
-## SCHEMA TAB
-- [ ] Change env to add redis
-- [ ] pip install networkx redis and update requirements
-- [ ] test todo/add_schema_relation.py
-
+- [x] Date of last upload
+- [x] Time period concerned
+- [x] Identify gaps (linear graph counting PMSI document creation dates, not upload)
 
 
 ## GENERAL IMPROVEMENTS

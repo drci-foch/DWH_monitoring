@@ -1,7 +1,9 @@
 import streamlit as st
-from datetime import datetime, timedelta
+from datetime import datetime
 import requests
-from typing import Dict, Optional, List, Union, Any, Tuple, Set
+import pandas as pd
+from typing import Dict, Optional, List, Union, Any
+from .cache import EndpointCache
 from ..api.client import APIClient
 from ..data.generators import (
     generate_document_counts,
@@ -16,64 +18,18 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
-class DataCache:
-    def __init__(self, ttl_seconds: int = 3600):  # 1 hour default TTL
-        self.cache: Dict[str, Dict[str, Any]] = {}
-        self.timestamps: Dict[str, datetime] = {}
-        self.ttl = timedelta(seconds=ttl_seconds)
-
-    def get_cache_key(self, endpoint: str, origin_codes: List[str]) -> str:
-        """Generate a cache key from endpoint and sorted origin codes"""
-        return f"{endpoint}:{','.join(sorted(origin_codes))}"
-
-    def get(self, endpoint: str, origin_codes: List[str]) -> Optional[Dict[str, Any]]:
-        """Get cached data if available and not expired"""
-        cache_key = self.get_cache_key(endpoint, origin_codes)
-        
-        if cache_key not in self.cache:
-            return None
-
-        if datetime.now() - self.timestamps[cache_key] > self.ttl:
-            del self.cache[cache_key]
-            del self.timestamps[cache_key]
-            return None
-
-        logger.debug(f"Cache hit for key: {cache_key}")
-        return self.cache[cache_key]
-
-    def set(self, endpoint: str, origin_codes: List[str], data: Dict[str, Any]):
-        """Cache the data with endpoint and origin codes as key"""
-        cache_key = self.get_cache_key(endpoint, origin_codes)
-        self.cache[cache_key] = data
-        self.timestamps[cache_key] = datetime.now()
-        logger.debug(f"Cached data for key: {cache_key}")
-
-    def is_subset_cached(self, endpoint: str, origin_codes: List[str]) -> Tuple[bool, Optional[Set[str]]]:
-        """Check if the requested origin codes are a subset of any cached data"""
-        requested_set = set(origin_codes)
-        
-        for cached_key in self.cache:
-            if cached_key.startswith(f"{endpoint}:"):
-                cached_origins = set(cached_key.split(':', 1)[1].split(','))
-                if requested_set.issubset(cached_origins):
-                    if datetime.now() - self.timestamps[cached_key] <= self.ttl:
-                        return True, cached_origins
-        
-        return False, None
-    
 class DataService:
     def __init__(self):
-        """Initialize DataService with API client and endpoint mappings."""
         self.base_url = "http://localhost:8000"
         self.client = APIClient(self.base_url)
-        self.cache = DataCache()
-        self.available_origins_cache: Optional[List[str]] = None
+        # Initialize cache in session state if not exists
+        if 'endpoint_cache' not in st.session_state:
+            st.session_state.endpoint_cache = {}
+            
         self.setup_endpoints()
+        self.available_origins_cache: Optional[List[str]] = None
 
     def setup_endpoints(self):
-        """Setup both API endpoints and their simulation mappings."""
-        # API endpoints
         self.api_endpoints = {
             "summary": "/api/v1/summary/api/summary",
             "document_metrics": "/api/v1/documents/api/document_metrics",
@@ -84,10 +40,11 @@ class DataService:
             "document_counts_by_year": "/api/v1/sources/api/document_counts_by_year",
             "recent_document_counts_by_month": "/api/v1/sources/api/recent_document_counts_by_month",
             "archive_status": "/api/v1/archives/api/archive_status",
-            "available_origins": "/api/v1/sources/api/available_origins"  # New endpoint
+            "available_origins": "/api/v1/sources/api/available_origins",
+            "pmsi": "/api/v1/pmsi/api/pmsi",  
+            "users_stats": "/api/v1/users/api/users_stats"  
         }
 
-        # Simulation data generators
         self.simulation_handlers = {
             "summary": lambda: generate_sample_data()["summary"],
             "document_metrics": generate_document_metrics,
@@ -97,38 +54,26 @@ class DataService:
             "top_users_current_year": lambda: generate_top_users(current_year=True),
             "document_counts_by_year": self._handle_yearly_counts,
             "recent_document_counts_by_month": self._handle_monthly_counts,
-            "archive_status": generate_archive_sample_data
+            "archive_status": generate_archive_sample_data,
+            "pmsi": self._handle_pmsi_simulation,  
+            "users_stats": self._handle_user_stats_simulation
         }
 
     async def get_available_origins(self, force_refresh: bool = False) -> List[str]:
-        """
-        Get list of available origin codes from the API.
-        
-        Args:
-            force_refresh: Whether to force refresh the cache
-            
-        Returns:
-            List[str]: List of available origin codes
-        """
-        if self.available_origins_cache is None or force_refresh:
-            try:
-                response = self._get_api_data("available_origins")
-                self.available_origins_cache = response
-            except requests.RequestException as e:
-                logger.error(f"Failed to fetch available origins: {str(e)}")
-                return []
-        return self.available_origins_cache
+        if not force_refresh:
+            cached_origins = self.cache.get("available_origins")
+            if cached_origins is not None:
+                return cached_origins
+
+        try:
+            response = self._get_api_data("available_origins")
+            self.cache.set("available_origins", response)
+            return response
+        except requests.RequestException as e:
+            logger.error(f"Failed to fetch available origins: {str(e)}")
+            return []
 
     def validate_origin_codes(self, origin_codes: Union[str, List[str]]) -> List[str]:
-        """
-        Validate and format origin codes.
-        
-        Args:
-            origin_codes: Origin codes as string or list
-            
-        Returns:
-            List[str]: List of validated origin codes
-        """
         if isinstance(origin_codes, str):
             origin_codes = [code.strip() for code in origin_codes.split(",") if code.strip()]
         
@@ -138,19 +83,7 @@ class DataService:
         return origin_codes
 
     def fetch_data(self, endpoint_key: str, use_simulation: bool = False, params: Optional[Dict] = None) -> Optional[Dict]:
-        """
-        Fetch data either from API or simulation based on the use_simulation flag.
-        
-        Args:
-            endpoint_key: Key for the endpoint to use
-            use_simulation: Whether to use simulated data
-            params: Optional parameters for the API call
-            
-        Returns:
-            Optional[Dict]: The fetched or simulated data
-        """
         try:
-            # Validate origin codes if present in params
             if params and "origin_codes" in params:
                 params["origin_codes"] = ",".join(self.validate_origin_codes(params["origin_codes"]))
 
@@ -168,50 +101,95 @@ class DataService:
             return None
 
     def _filter_data_for_origins(self, data: Dict[str, Any], origin_codes: List[str]) -> Dict[str, Any]:
-        """Filter cached data for specific origin codes"""
         if isinstance(data, list):
             return [item for item in data if item.get('origin') in origin_codes]
-        return data  # Return as-is if format doesn't match expectations
+        return data
 
     def validate_and_clean_origin_codes(self, origin_codes: Union[str, List[str]]) -> List[str]:
-        """Validate and clean origin codes"""
         if isinstance(origin_codes, str):
             origin_codes = [code.strip() for code in origin_codes.split(",") if code.strip()]
-        
-        # Remove duplicates while preserving order
         return list(dict.fromkeys(origin_codes))
 
+    def _aggregate_data(self, data: List[Dict], aggregate: bool, data_type: str = 'yearly') -> List[Dict]:
+        if not aggregate:
+            return data
+            
+        aggregated_data = []
+        easily_sums = {}
+        doc_externe_sums = {}
+        
+        if data_type == 'yearly':
+            # Current yearly aggregation logic
+            for entry in data:
+                origin = entry['document_origin_code']
+                year = entry['year']
+                count = entry['count']
+                
+                if origin.startswith('Easil'):
+                    easily_sums[year] = easily_sums.get(year, 0) + count
+                elif origin.startswith('DOC_EXTERN'):
+                    doc_externe_sums[year] = doc_externe_sums.get(year, 0) + count
+                else:
+                    aggregated_data.append(entry)
+            
+            # Add aggregated yearly data
+            for year in sorted(easily_sums):
+                aggregated_data.append({
+                    'document_origin_code': 'Easily_ALL',
+                    'year': year,
+                    'count': easily_sums[year]
+                })
+                
+            for year in sorted(doc_externe_sums):
+                aggregated_data.append({
+                    'document_origin_code': 'DOC_EXTERNE_ALL',
+                    'year': year,
+                    'count': doc_externe_sums[year]
+                })
+                
+        else:
+            # Monthly data comes as a DataFrame
+            df = pd.DataFrame(data)
+            df['month'] = pd.to_datetime(df['month'])
+            
+            # Group by month and aggregate
+            easily_mask = df['document_origin_code'].str.startswith('Easil')
+            doc_externe_mask = df['document_origin_code'].str.startswith('DOC_EXTERN')
+            
+            # Keep non-aggregated records
+            aggregated_data = df[~(easily_mask | doc_externe_mask)].to_dict('records')
+            
+            # Aggregate Easily data
+            if easily_mask.any():
+                easily_agg = df[easily_mask].groupby('month')['count'].sum().reset_index()
+                easily_agg['document_origin_code'] = 'Easily_ALL'
+                aggregated_data.extend(easily_agg.to_dict('records'))
+                
+            # Aggregate DOC_EXTERNE data
+            if doc_externe_mask.any():
+                doc_externe_agg = df[doc_externe_mask].groupby('month')['count'].sum().reset_index()
+                doc_externe_agg['document_origin_code'] = 'DOC_EXTERNE_ALL'
+                aggregated_data.extend(doc_externe_agg.to_dict('records'))
+        
+        return aggregated_data
 
     def _get_api_data(self, endpoint_key: str, params: Optional[Dict] = None) -> Optional[Dict]:
-        """Get data from API with caching"""
         if endpoint_key not in self.api_endpoints:
             raise ValueError(f"Unknown endpoint key: {endpoint_key}")
 
         try:
-            # Check cache first
-            if params and "origin_codes" in params:
-                origin_codes = [code.strip() for code in params["origin_codes"].split(",")]
-                
-                # Try to get exact cache match
-                cached_data = self.cache.get(endpoint_key, origin_codes)
-                if cached_data is not None:
-                    logger.debug(f"Returning cached data for {endpoint_key}")
-                    return cached_data
+            # Extract aggregate parameter before sending to API
+            aggregate = False
+            if params and 'aggregate' in params:
+                aggregate = params.pop('aggregate') == 'true'
 
-                # Check if request is subset of cached data
-                is_subset, cached_set = self.cache.is_subset_cached(endpoint_key, origin_codes)
-                if is_subset and cached_set:
-                    logger.debug(f"Request is subset of cached data for {endpoint_key}")
-                    cached_data = self.cache.get(endpoint_key, list(cached_set))
-                    if cached_data is not None:
-                        # Filter cached data for requested origins
-                        filtered_data = self._filter_data_for_origins(cached_data, origin_codes)
-                        return filtered_data
+            if endpoint_key in st.session_state.endpoint_cache:
+                data = st.session_state.endpoint_cache[endpoint_key]
+                if isinstance(data, list):
+                    return self._aggregate_data(data, aggregate)
+                return data
 
-            # If not in cache, fetch from API
             url = f"{self.base_url}{self.api_endpoints[endpoint_key]}"
-            logger.debug(f"Fetching from API: {url} with params: {params}")
-            
             response = requests.get(url, params=params)
             
             if response.status_code == 400:
@@ -221,45 +199,76 @@ class DataService:
             response.raise_for_status()
             data = response.json()
 
-            # Cache the response
-            if params and "origin_codes" in params:
-                self.cache.set(endpoint_key, origin_codes, data)
+            # Cache the raw data
+            st.session_state.endpoint_cache[endpoint_key] = data
 
+            # Apply aggregation if needed
+            if isinstance(data, list):
+                return self._aggregate_data(data, aggregate)
             return data
             
         except requests.RequestException as e:
             logger.error(f"API request failed: {str(e)}")
             raise
-            
 
     def _get_simulated_data(self, endpoint_key: str, params: Optional[Dict] = None) -> Optional[Dict]:
-        """Get simulated data."""
         if endpoint_key not in self.simulation_handlers:
             raise ValueError(f"No simulation handler for: {endpoint_key}")
             
         handler = self.simulation_handlers[endpoint_key]
-        if params and callable(handler):
-            return handler(params)
-        return handler() if callable(handler) else handler
+        return handler(params) if params and callable(handler) else handler() if callable(handler) else handler
 
     def _handle_yearly_counts(self, params: Optional[Dict] = None) -> Optional[Dict]:
-        """Handle document counts by year endpoint."""
         if not params or "origin_codes" not in params:
             logger.warning("No origin codes provided for yearly counts")
             return []
 
-        origin_codes = params["origin_codes"]
-        if isinstance(origin_codes, str):
-            origin_codes = origin_codes.split(",")
+        origin_codes = params["origin_codes"].split(",") if isinstance(params["origin_codes"], str) else params["origin_codes"]
         return generate_document_counts_by_year(origin_codes)
 
     def _handle_monthly_counts(self, params: Optional[Dict] = None) -> Optional[Dict]:
-        """Handle monthly document counts endpoint."""
         if not params or "origin_codes" not in params:
             logger.warning("No origin codes provided for monthly counts")
             return []
 
-        origin_codes = params["origin_codes"]
-        if isinstance(origin_codes, str):
-            origin_codes = origin_codes.split(",")
+        origin_codes = params["origin_codes"].split(",") if isinstance(params["origin_codes"], str) else params["origin_codes"]
         return generate_recent_document_counts_by_month(origin_codes)
+    
+    def _handle_pmsi_simulation(self, params: Optional[Dict] = None) -> Dict[str, Any]:
+        """Simulate PMSI data for development."""
+        return {
+            "last_upload": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "time_period": {
+                "start_date": "2023-01-01",
+                "end_date": "2024-01-01",
+                "months_count": 12
+            },
+            "monthly_counts": [
+                {"month": f"2023-{m:02d}-01", "count": 1000 + m * 100}
+                for m in range(1, 13)
+            ],
+            "gaps": ["2023-03-01", "2023-07-01"],
+            "stats": {
+                "total_documents": 15000,
+                "avg_monthly_documents": 1250,
+                "max_monthly_documents": 2200,
+                "months_with_gaps": 2
+            }
+        }
+    
+
+    def _handle_user_stats_simulation(self, params: Optional[Dict] = None) -> Dict[str, Any]:
+        """Simulate user statistics for development."""
+        return {
+            "low_activity_users_count": 25,
+            "total_users": 100,
+            "avg_queries": 15.5,
+            "max_queries": 150,
+            "min_queries": 1,
+            "low_activity_percentage": 25.0,
+            "low_activity_details": [
+                {"name": "John Doe", "count": 1},
+                {"name": "Jane Smith", "count": 2},
+                {"name": "Bob Wilson", "count": 3}
+            ]
+        }

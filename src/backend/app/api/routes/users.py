@@ -56,3 +56,21 @@ async def get_top_users_current_year(
             status_code=500,
             detail="An error occurred while fetching top users for current year",
         )
+
+@router.get("/users_stats", response_model=Dict[str, Any])
+async def get_users_statistics(
+    db_checker: DatabaseQualityChecker = Depends(get_db_checker),
+    current_year: bool = False
+):
+    """Get extended user statistics."""
+    try:
+        stats = await db_checker.get_users_stats(current_year)
+        if not stats:
+            raise HTTPException(status_code=404, detail="No user statistics found")
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting user statistics: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred while fetching user statistics"
+        )

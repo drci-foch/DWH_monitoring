@@ -8,6 +8,7 @@ import sys
 import pandas as pd
 import plotly.express as px
 from scipy import stats
+import requests
 
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../../"))
@@ -62,7 +63,63 @@ class Dashboard:
             logger.error(f"Error fetching data from {endpoint_key}: {str(e)}")
             st.error(f"Error fetching data: {str(e)}")
             return None
-
+        
+    def _aggregate_data(self, data: List[Dict], aggregate: bool, data_type: str = 'yearly') -> List[Dict]:
+        if not aggregate:
+            return data
+            
+        aggregated_data = []
+        easily_sums = {}
+        doc_externe_sums = {}
+        
+        if data_type == 'yearly':
+            for entry in data:
+                origin = entry['document_origin_code']
+                year = entry['year']
+                count = entry['count']
+                
+                if origin.startswith('Easil'):
+                    easily_sums[year] = easily_sums.get(year, 0) + count
+                elif origin.startswith('DOC_EXTERN'):
+                    doc_externe_sums[year] = doc_externe_sums.get(year, 0) + count
+                else:
+                    aggregated_data.append(entry)
+            
+            for year in sorted(easily_sums):
+                aggregated_data.append({
+                    'document_origin_code': 'Easily_ALL',
+                    'year': year,
+                    'count': easily_sums[year]
+                })
+                
+            for year in sorted(doc_externe_sums):
+                aggregated_data.append({
+                    'document_origin_code': 'DOC_EXTERNE_ALL',
+                    'year': year,
+                    'count': doc_externe_sums[year]
+                })
+                
+        else:
+            df = pd.DataFrame(data)
+            df['month'] = pd.to_datetime(df['month'])
+            
+            easily_mask = df['document_origin_code'].str.startswith('Easil')
+            doc_externe_mask = df['document_origin_code'].str.startswith('DOC_EXTERN')
+            
+            aggregated_data = df[~(easily_mask | doc_externe_mask)].to_dict('records')
+            
+            if easily_mask.any():
+                easily_agg = df[easily_mask].groupby('month')['count'].sum().reset_index()
+                easily_agg['document_origin_code'] = 'Easily_ALL'
+                aggregated_data.extend(easily_agg.to_dict('records'))
+                
+            if doc_externe_mask.any():
+                doc_externe_agg = df[doc_externe_mask].groupby('month')['count'].sum().reset_index()
+                doc_externe_agg['document_origin_code'] = 'DOC_EXTERNE_ALL'
+                aggregated_data.extend(doc_externe_agg.to_dict('records'))
+        
+        return aggregated_data
+    
     def display_summary_section(self, use_simulation: bool):
         """Display summary section with metrics and boxplot."""
         st.header("📊 Métriques Générales")
@@ -460,190 +517,138 @@ class Dashboard:
             st.header("📈 Monitoring des connecteurs")
 
             origin_codes = [
-                "ARCH_INTERNE",
-                "BIO",
-                "CYBERLAB",
-                "DOC_EXTERNE_Ari",
-                "DOC_EXTERNE_Api",
-                "DOC_EXTERNE_CeS",
-                "DOC_EXTERNE_Car",
-                "DOC_EXTERNE_COP",
-                "DOC_EXTERNE_DIA",
-                "DOC_EXTERNE_ECG",
-                "DOC_EXTERNE_None",
-                "DOC_EXTERNE_Pat",
-                "DOC_EXTERNE_Res",
-                "DOC_EXTERNE_SOF",
-                "DOC_EXTERNE_SPI",
-                "DOC_EXTERNE_XPl",
-                "DOC_EXTERNE_vie",
-                "DOC_EXTERNE_Med",
-                "DOC_EXTERNE_PCA",
-                "Easily",
-                "Easily_Ari",
-                "Easily_Car",
-                "Easily_CeS",
-                "Easily_COP",
-                "Easily_DIA",
-                "Easily_echo_cardio",
-                "Easily_Efitback",
-                "Easily_EFR",
-                "Easily_Med",
-                "Easily_Muse",
-                "Easily_Patientys",
-                "Easily_PCA",
-                "Easily_Res",
-                "Easily_SOF",
-                "Easily_Xpl",
-                "FOCH_EFR",
-                "RDV_DOCTOLIB",
+                "ARCH_INTERNE", "BIO", "CYBERLAB",
+                "DOC_EXTERNE_Ari", "DOC_EXTERNE_Api", "DOC_EXTERNE_CeS",
+                "DOC_EXTERNE_Car", "DOC_EXTERNE_COP", "DOC_EXTERNE_DIA",
+                "DOC_EXTERNE_ECG", "DOC_EXTERNE_None", "DOC_EXTERNE_Pat",
+                "DOC_EXTERNE_Res", "DOC_EXTERNE_SOF", "DOC_EXTERNE_SPI",
+                "DOC_EXTERNE_XPl", "DOC_EXTERNE_vie", "DOC_EXTERNE_Med",
+                "DOC_EXTERNE_PCA", "Easily", "Easily_Ari", "Easily_Car",
+                "Easily_CeS", "Easily_COP", "Easily_DIA", "Easily_echo_cardio",
+                "Easily_Efitback", "Easily_EFR", "Easily_Med", "Easily_Muse",
+                "Easily_Patientys", "Easily_PCA", "Easily_Res", "Easily_SOF",
+                "Easily_Xpl", "FOCH_EFR", "RDV_DOCTOLIB"
             ]
 
-            # Initialize session state for selected origins
-            if "selected_origins" not in st.session_state:
-                st.session_state.selected_origins = (
-                    origin_codes[:5] if len(origin_codes) > 5 else origin_codes
-                )
-                print("\n=== Debug: Initial Session State ===")
-                print(
-                    f"Initialized selected_origins: {st.session_state.selected_origins}"
-                )
-
-            if "select_all" not in st.session_state:
-                st.session_state.select_all = True
-
-            def handle_select_all():
-                st.session_state.selected_origins = origin_codes.copy()
-                st.session_state.select_all = True
-                print("\n=== Debug: Handle Select All ===")
-                print(f"Updated selected_origins: {st.session_state.selected_origins}")
-
-            def handle_selection_change():
-                st.session_state.selected_origins = st.session_state.multiselect_value
-                st.session_state.select_all = False
-                print("\n=== Debug: Handle Selection Change ===")
-                print(f"Updated selected_origins: {st.session_state.selected_origins}")
-
-            col1, col2 = st.columns([3, 1])
-
-            # with col1:
-            #     selected = st.multiselect(
-            #         "Sélectionner les Origines de Documents à Afficher",
-            #         options=origin_codes,
-            #         default=[
-            #             code
-            #             for code in st.session_state.selected_origins
-            #             if code in origin_codes
-            #         ],
-            #         key="multiselect_value",
-            #         help="Choisir les origines de documents à afficher dans les graphiques",
-            #     )
-
-            # with col2:
-            #     st.button("Tout Sélectionner", on_click=handle_select_all)
-
-            # if selected:
-            #     self.display_time_series_data(selected, use_simulation)
-            # else:
-            #     st.info("Veuillez sélectionner au moins une origine de documents.")
-
-            # Create tabs for different views
             tab1, tab2, tab3 = st.tabs(["📈 Graphiques", "📊 Statistiques", "ℹ️ Analyse"])
             
             with tab1:
-                col1, col2 = st.columns([3, 1])
+                st.info("""
+                📊 Visualisation des séries temporelles
                 
-                with col1:
-                    selected = st.multiselect(
-                        "Sélectionner les Origines de Documents à Afficher",
-                        options=origin_codes,
-                        default=[
-                            code
-                            for code in st.session_state.selected_origins
-                            if code in origin_codes
-                        ],
-                        key="multiselect_value_graphs",
-                        help="Choisir les origines de documents à afficher dans les graphiques",
-                    )
-
-                with col2:
-                    st.button(
-                        "Tout Sélectionner",
-                        on_click=handle_select_all,
-                        key="select_all_button_graphs"  # Ajout d'une clé unique pour le bouton
-                    )
-
-                if selected:
-                    self.display_time_series_data(selected, use_simulation)
+                Ce graphique montre l'évolution du nombre de documents par connecteur au fil du temps.
+                
+                - Survolez les points pour voir les détails
+                - Double-cliquez sur une légende pour isoler un connecteur
+                - Cliquez sur les boutons de zoom en haut pour ajuster la vue
+                - Utilisez la souris pour zoomer sur une période spécifique
+                
+                Option d'agrégation:
+                - Activez le bouton pour regrouper les connecteurs Easily et DOC_EXTERNE
+                """)
+                
+                # Add toggle for aggregation
+                aggregate_data = st.toggle('Regrouper les connecteurs Easily et DOC_EXTERNE', value=False)
+                
+                if aggregate_data:
+                    processed_origins = self._aggregate_origin_codes(origin_codes)
                 else:
-                    st.info("Veuillez sélectionner au moins une origine de documents.")
+                    processed_origins = origin_codes
                     
+                self.display_time_series_data(processed_origins, use_simulation, aggregate_data)
+                
             with tab2:
-                if not selected:
-                    st.info("Veuillez sélectionner des connecteurs dans l'onglet Graphiques pour voir leurs statistiques.")
+                params = {"origin_codes": ",".join(processed_origins)}
+                yearly_data = self.fetch_data("document_counts_by_year", use_simulation, params=params)
+                monthly_data = self.fetch_data("recent_document_counts_by_month", use_simulation, params=params)
+                
+                if yearly_data and monthly_data:
+                    self.metrics_display.display_connector_statistics(yearly_data, monthly_data)
                 else:
-                    # Fetch data for statistics
-                    origin_codes_str = ",".join(selected)
-                    params = {"origin_codes": origin_codes_str}
+                    st.warning("Données insuffisantes pour calculer les statistiques.")
                     
-                    yearly_data = self.fetch_data(
-                        "document_counts_by_year", use_simulation, params=params
-                    )
-                    monthly_data = self.fetch_data(
-                        "recent_document_counts_by_month", use_simulation, params=params
-                    )
-                    
-                    if yearly_data and monthly_data:
-                        self.metrics_display.display_connector_statistics(yearly_data, monthly_data)
-                    else:
-                        st.warning("Données insuffisantes pour calculer les statistiques.")
-                        
             with tab3:
                 st.write("#### 🔍 Analyse des Tendances")
-                # st.info("""
-                # Cette vue permet d'identifier :
-                # - Les variations significatives de volume
-                # - Les tendances de croissance par connecteur
-                # - Les périodes de pic et de creux d'activité
-                # - Les anomalies potentielles dans les flux de données
-                # """)
-                
-                if selected and yearly_data and monthly_data:
-                    # Add automated insights based on the data
+                if yearly_data and monthly_data:
                     self.display_automated_insights(yearly_data, monthly_data)
 
         except Exception as e:
-            print(f"\n=== Debug: Error in display_connector_monitoring ===")
+            print("\n=== Debug: Error in display_connector_monitoring ===")
             print(f"Error type: {type(e).__name__}")
             print(f"Error message: {str(e)}")
             st.error(f"Une erreur s'est produite : {str(e)}")
             logger.error(f"Error in display_connector_monitoring: {str(e)}")
 
+    def _aggregate_origin_codes(self, origin_codes: List[str]) -> List[str]:
+        """Aggregate origin codes for Easily and DOC_EXTERNE."""
+        aggregated_codes = []
+        easily_codes = []
+        doc_externe_codes = []
+        
+        for code in origin_codes:
+            if code.startswith('Easil'):
+                easily_codes.append(code)
+            elif code.startswith('DOC_EXTERN'):
+                doc_externe_codes.append(code)
+            else:
+                aggregated_codes.append(code)
+        
+        if easily_codes:
+            aggregated_codes.append('Easily_ALL')
+        if doc_externe_codes:
+            aggregated_codes.append('DOC_EXTERNE_ALL')
+        
+        return aggregated_codes
+    
 
-    def display_time_series_data(
-        self, selected_origins: List[str], use_simulation: bool
-    ):
+
+    def _get_api_data(self, endpoint_key: str, params: Optional[Dict] = None) -> Optional[Dict]:
+        if endpoint_key not in self.api_endpoints:
+            raise ValueError(f"Unknown endpoint key: {endpoint_key}")
+
+        try:
+            aggregate = params.pop('aggregate', 'false') == 'true' if params else False
+            data_type = 'yearly' if 'year' in endpoint_key else 'monthly'
+
+            if endpoint_key in st.session_state.endpoint_cache:
+                data = st.session_state.endpoint_cache[endpoint_key]
+                if isinstance(data, list):
+                    return self._aggregate_data(data, aggregate, data_type)
+                return data
+
+            url = f"{self.base_url}{self.api_endpoints[endpoint_key]}"
+            response = requests.get(url, params=params)
+            
+            if response.status_code == 400:
+                error_detail = response.json().get("detail", "Bad request")
+                raise ValueError(f"API Error: {error_detail}")
+                
+            response.raise_for_status()
+            data = response.json()
+
+            st.session_state.endpoint_cache[endpoint_key] = data
+
+            if isinstance(data, list):
+                return self._aggregate_data(data, aggregate, data_type)
+            return data
+            
+        except requests.RequestException as e:
+            logger.error(f"API request failed: {str(e)}")
+            raise
+
+    def display_time_series_data(self, selected_origins: List[str], use_simulation: bool, aggregate_data: bool = False):
         """Display time series data for selected origins."""
         try:
-            # Simply join the selected origins with comma
             origin_codes_str = ",".join(selected_origins)
-
-            print("\n=== Debug: Time Series Data Request ===")
-            print(f"Selected origins: {selected_origins}")
-            print(f"Origin codes string: {origin_codes_str}")
-
             params = {"origin_codes": origin_codes_str}
-
+            
             with st.spinner("Chargement des données..."):
-                yearly_data = self.fetch_data(
-                    "document_counts_by_year", use_simulation, params=params
-                )
-                print(f"\nYearly data response: {yearly_data}")
-
-                monthly_data = self.fetch_data(
-                    "recent_document_counts_by_month", use_simulation, params=params
-                )
-                print(f"\nMonthly data response: {monthly_data}")
+                yearly_data = self.fetch_data("document_counts_by_year", use_simulation, params=params)
+                monthly_data = self.fetch_data("recent_document_counts_by_month", use_simulation, params=params)
+                
+                if aggregate_data:
+                    yearly_data = self._aggregate_data(yearly_data, True, 'yearly')
+                    monthly_data = self._aggregate_data(monthly_data, True, 'monthly')
 
             if yearly_data and monthly_data:
                 tab1, tab2 = st.tabs(["Tendance Annuelle", "Tendance Mensuelle"])
@@ -654,7 +659,7 @@ class Dashboard:
                             yearly_data,
                             "year",
                             "Nombre de Documents par Année",
-                            show_range_selector=False,
+                            show_range_selector=False
                         )
                     else:
                         st.info("Aucune donnée annuelle disponible.")
@@ -665,7 +670,7 @@ class Dashboard:
                             monthly_data,
                             "month",
                             "Nombre de Documents Récents par Mois",
-                            show_range_selector=True,
+                            show_range_selector=False
                         )
                     else:
                         st.info("Aucune donnée mensuelle disponible.")
@@ -673,52 +678,107 @@ class Dashboard:
                 st.warning("Aucune donnée disponible pour les origines sélectionnées.")
 
         except Exception as e:
-            print(f"\n=== Debug: Error in display_time_series_data ===")
+            print("\n=== Debug: Error in display_time_series_data ===")
             print(f"Error type: {type(e).__name__}")
             print(f"Error message: {str(e)}")
             st.error(f"Erreur lors de la récupération des données: {str(e)}")
             logger.error(f"Error in display_time_series_data: {str(e)}")
 
     def display_user_activity(self, use_simulation: bool):
-        """Display user activity section."""
-        
-
+        """Display user activity section with detailed statistics."""
         st.header("👥 Activité Utilisateurs")
+        # Update info expandable
         with st.expander("ℹ️ À propos de l'Activité Utilisateurs"):
             st.markdown("""
             **Analyse des Requêtes Utilisateurs:**
-            - Affiche les 10 premiers utilisateurs par nombre de requêtes
+            - Les 10 premiers utilisateurs par nombre de requêtes
             - Les membres de l'équipe CODOC sont regroupés sous 'CODOC'
+            - Identification des utilisateurs peu actifs (≤3 requêtes)
+            - Statistiques globales d'utilisation
             - Les comptages sont basés sur la table DWH_LOG_QUERY
             """)
-
+        # Fetch all user data
         top_users = self.fetch_data("top_users", use_simulation)
-
-
-        
         current_year_users = self.fetch_data("top_users_current_year", use_simulation)
-
-
-        print("\n=== Debug: Users Request ===")
-        print(f"Top users ALL PERIOD: {top_users}")
-        print(f"Top users CURRENT YEAR: {current_year_users}")
+        user_stats = self.fetch_data("users_stats", use_simulation)
         
-        if top_users or current_year_users:
-            tab1, tab2 = st.tabs(["Historique Complet", "Année en Cours"])
+        # Overview metrics
+        if user_stats:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric(
+                    "Utilisateurs Actifs", 
+                    f"{user_stats['total_users']}",
+                    help="Nombre total d'utilisateurs ayant effectué au moins une requête (année en cours)"
+                )
+            with col2:
+                st.metric(
+                    "Utilisateurs Peu Actifs (≤3 requêtes)", 
+                    f"{user_stats['low_activity_users_count']} ({user_stats['low_activity_percentage']:.1f}%)",
+                    help="Utilisateurs ayant fait 3 requêtes ou moins"
+                )
+            with col3:
+                st.metric(
+                    "Moyenne de Requêtes", 
+                    f"{user_stats['avg_queries']:.1f}",
+                    help="Nombre moyen de requêtes par utilisateur"
+                )
+        
+        # Activity charts in tabs
+        tab1, tab2, tab3 = st.tabs(["📊 Historique Complet", "📈 Année en Cours", "🔍 Utilisateurs Peu Actifs"])
+        
+        with tab3:
+            if user_stats and user_stats['low_activity_details']:
+                st.info("Liste des utilisateurs ayant effectué 3 requêtes ou moins")
+                
+                # Create DataFrame for low activity users
+                df_low = pd.DataFrame(user_stats['low_activity_details'])
+                df_low['name'] = df_low['name'].apply(lambda x: ' '.join(x.split()))
 
-            with tab1:
-                if top_users:
-                    self.chart_display.create_user_activity_chart(
-                        top_users,
-                        "Top Utilisateurs par Nombre de Requêtes (Historique)",
-                    )
+                # Display as bar chart
+                fig = px.bar(df_low, 
+                            x='name', 
+                            y='count',
+                            title="Utilisateurs Peu Actifs (≤3 requêtes)",
+                            labels={'name': 'Utilisateur', 'count': 'Nombre de requêtes'})
+                
+                fig.update_layout(showlegend=False)
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Create DataFrame
+                df = pd.DataFrame(user_stats['low_activity_details'])
+                df.columns = ['Utilisateur', 'Nombre de requêtes']
+                df['Utilisateur'] = df['Utilisateur'].apply(lambda x: ' '.join(x.split()))
 
-            with tab2:
-                if current_year_users:
-                    self.chart_display.create_user_activity_chart(
-                        current_year_users,
-                        f"Top Utilisateurs par Nombre de Requêtes ({datetime.now().year})",
+                # Display as Streamlit dataframe with custom styling
+                st.dataframe(
+                df,
+                column_config={
+                    "Utilisateur": "Utilisateur",
+                    "Nombre de requêtes": st.column_config.NumberColumn(
+                        "Nombre de requêtes",
+                        help="Nombre de requêtes effectuées",
+                        format="%d"
                     )
+                },
+                hide_index=True,
+                use_container_width=True
+                )
+        with tab1:
+            if top_users:
+                self.chart_display.create_user_activity_chart(
+                    top_users,
+                    "Top Utilisateurs par Nombre de Requêtes (Historique)"
+                )
+        
+        with tab2:
+            if current_year_users:
+                self.chart_display.create_user_activity_chart(
+                    current_year_users,
+                    f"Top Utilisateurs par Nombre de Requêtes ({datetime.now().year})"
+                )
+                
+
 
     def display_archive_status(self, use_simulation: bool):
         """Display archive status section."""
@@ -736,17 +796,93 @@ class Dashboard:
             self.chart_display.create_archive_chart(archive_data)
 
     def display_pmsi(self, use_simulation: bool):
-        """Display archive status section."""
+        """Display PMSI analytics section."""
         st.header("📋 Documents PMSI")
-        with st.expander("ℹ️ À propos de l'onglet PMSI"):
-            st.markdown("""
-            Add Markdown
-            """)
-
-        # pmsi = self.fetch_data("pmsi", use_simulation)
-        # if pmsi:
-        #     self.metrics_display.display_archive_metrics(pmsi)
-        #     self.chart_display.create_archive_chart(pmsi)
+        
+        pmsi_data = self.fetch_data("pmsi", use_simulation)
+        if not pmsi_data:
+            st.warning("Aucune donnée PMSI disponible.")
+            return
+            
+        # Overview metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric(
+                "Dernier chargement",
+                pmsi_data["last_upload"],
+                help="Date et heure du dernier document PMSI chargé"
+            )
+        with col2:
+            st.metric(
+                "Période couverte",
+                f"{pmsi_data['time_period']['months_count']} mois",
+                help="Nombre de mois entre le premier et le dernier document"
+            )
+        with col3:
+            st.metric(
+                "Mois avec données manquantes",
+                len(pmsi_data["gaps"]),
+                help="Nombre de mois sans données dans la période"
+            )
+            
+        # Monthly trend visualization
+        if pmsi_data["monthly_counts"]:
+            df = pd.DataFrame(pmsi_data["monthly_counts"])
+            df['month'] = pd.to_datetime(df['month'])
+            
+            fig = px.line(
+                df,
+                x='month',
+                y='count',
+                title="Evolution mensuelle des documents PMSI",
+                labels={'count': 'Nombre de documents', 'month': 'Mois'}
+            )
+            
+            # Add gaps visualization
+            if pmsi_data["gaps"]:
+                gap_dates = pd.to_datetime(pmsi_data["gaps"])
+                fig.add_scatter(
+                    x=gap_dates,
+                    y=[0] * len(gap_dates),
+                    mode='markers',
+                    marker=dict(color='red', size=10, symbol='x'),
+                    name='Mois manquants'
+                )
+                
+            fig.update_layout(
+                hovermode='x unified',
+                showlegend=True
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Statistics
+            st.subheader("📊 Statistiques")
+            stats_cols = st.columns(4)
+            with stats_cols[0]:
+                st.metric(
+                    "Total documents",
+                    f"{pmsi_data['stats']['total_documents']:,}",
+                    help="Nombre total de documents PMSI"
+                )
+            with stats_cols[1]:
+                st.metric(
+                    "Moyenne mensuelle",
+                    f"{pmsi_data['stats']['avg_monthly_documents']:.0f}",
+                    help="Moyenne de documents par mois"
+                )
+            with stats_cols[2]:
+                st.metric(
+                    "Maximum mensuel",
+                    f"{pmsi_data['stats']['max_monthly_documents']:,}",
+                    help="Plus grand nombre de documents sur un mois"
+                )
+            with stats_cols[3]:
+                st.metric(
+                    "Gaps",
+                    f"{pmsi_data['stats']['months_with_gaps']} mois",
+                    help="Nombre de mois sans données"
+                )
 
     def display_about_section(self, use_simulation: bool = None):
         """

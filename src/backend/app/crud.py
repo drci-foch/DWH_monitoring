@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+import pandas as pd
 from collections import defaultdict, Counter
 from datetime import datetime
 from functools import lru_cache, wraps
@@ -381,6 +382,66 @@ class DatabaseQualityChecker:
             for (firstname, lastname), query_count in top_users
         ]
 
+
+    async def get_users_stats(self, current_year: bool = False) -> Dict[str, Any]:
+        """Get extended user statistics including low activity users."""
+        query = """
+        WITH user_stats AS (
+            SELECT /*+ PARALLEL(4) */
+                u.FIRSTNAME,
+                u.LASTNAME,
+                COUNT(*) as QUERY_COUNT
+            FROM DWH.DWH_LOG_QUERY l
+            JOIN DWH.DWH_USER u ON l.USER_NUM = u.USER_NUM
+            {where_clause}
+            GROUP BY u.FIRSTNAME, u.LASTNAME
+        )
+        SELECT
+            COUNT(CASE WHEN QUERY_COUNT <= 3 THEN 1 END) as LOW_ACTIVITY_USERS,
+            COUNT(*) as TOTAL_USERS,
+            AVG(QUERY_COUNT) as AVG_QUERIES,
+            MAX(QUERY_COUNT) as MAX_QUERIES,
+            MIN(QUERY_COUNT) as MIN_QUERIES,
+            LISTAGG(CASE WHEN QUERY_COUNT <= 3 
+                    THEN FIRSTNAME || ' ' || LASTNAME || ':' || QUERY_COUNT 
+                    END, '|') 
+            WITHIN GROUP (ORDER BY QUERY_COUNT) as LOW_ACTIVITY_DETAILS
+        FROM user_stats
+        """
+        
+        where_clause = (
+            "WHERE EXTRACT(YEAR FROM l.LOG_DATE) = EXTRACT(YEAR FROM SYSDATE)"
+            if current_year
+            else ""
+        )
+        
+        results = await self.execute_query(query.format(where_clause=where_clause))
+        if not results:
+            return {}
+            
+        low_activity, total, avg, max_q, min_q, details = results[0]
+        
+        # Process low activity users details
+        low_activity_users = []
+        if details:
+            for user_detail in details.split('|'):
+                if user_detail:
+                    name, count = user_detail.rsplit(':', 1)
+                    low_activity_users.append({
+                        "name": name,
+                        "count": int(count)
+                    })
+        
+        return {
+            "low_activity_users_count": int(low_activity),
+            "total_users": int(total),
+            "avg_queries": float(avg),
+            "max_queries": int(max_q),
+            "min_queries": int(min_q),
+            "low_activity_percentage": (low_activity / total * 100) if total else 0,
+            "low_activity_details": low_activity_users
+        }
+
     @ttl_cache(ttl_seconds=3600)  # Cache for 1 hour
     async def get_document_metrics(self) -> Dict[str, float]:
         """Optimized document metrics query with Python-side calculations"""
@@ -633,7 +694,107 @@ class DatabaseQualityChecker:
             logger.debug("Exception details:", exc_info=True)
             return {"yearly": [], "monthly": []}
 
+    async def get_pmsi(self) -> Dict[str, Any]:
+        """Get PMSI upload and document creation statistics."""
+        
+        queries = {
+            "last_upload": """
+                SELECT /*+ PARALLEL(8) INDEX_FFS(d IDX_DOCUMENT_UPDATE_DATE) */ 
+                MAX(UPDATE_DATE) as LAST_UPLOAD
+                FROM DWH.DWH_DOCUMENT d
+                WHERE DOCUMENT_ORIGIN_CODE = 'PMSI_MCO'
+            """,
+            
+            "time_period": """
+                SELECT /*+ PARALLEL(8) INDEX_FFS(d IDX_DOCUMENT_DATE) */
+                MIN(DOCUMENT_DATE) as START_DATE,
+                MAX(DOCUMENT_DATE) as END_DATE,
+                COUNT(DISTINCT TRUNC(DOCUMENT_DATE, 'MM')) as MONTHS_COUNT
+                FROM DWH.DWH_DOCUMENT d
+                WHERE DOCUMENT_ORIGIN_CODE = 'PMSI_MCO'
+                AND DOCUMENT_DATE IS NOT NULL
+            """,
+            
+            "monthly_data": """
+                SELECT /*+ PARALLEL(8) INDEX_FFS(d IDX_DOCUMENT_DATE) */
+                TRUNC(DOCUMENT_DATE, 'MM') as MONTH_DATE,
+                COUNT(*) as DOC_COUNT
+                FROM DWH.DWH_DOCUMENT d
+                WHERE DOCUMENT_ORIGIN_CODE = 'PMSI_MCO'
+                AND DOCUMENT_DATE >= ADD_MONTHS(SYSDATE, -24)
+                GROUP BY TRUNC(DOCUMENT_DATE, 'MM')
+                ORDER BY MONTH_DATE
+            """
+        }
+        
+        try:
+            last_upload, time_period, monthly_data = await asyncio.gather(
+                *(self.execute_query(query) for query in queries.values())
+            )
 
+            if not any([last_upload, time_period, monthly_data]):
+                return self._get_empty_pmsi_result()
+
+            # Convert to numpy arrays for fast processing
+            if monthly_data:
+                dates = np.array([row[0] for row in monthly_data])
+                dates = dates.astype('datetime64[M]')
+                counts = np.array([row[1] for row in monthly_data], dtype=np.int32)
+                
+                # Generate all months in range
+                start_month = dates.min()
+                end_month = dates.max()
+                date_range = np.arange(start_month, end_month + 1, dtype='datetime64[M]')
+                
+                # Find gaps using month precision
+                gaps = date_range[~np.isin(date_range, dates)]
+
+                # Calculate statistics
+                stats = {
+                    "total_documents": int(np.sum(counts)),
+                    "avg_monthly_documents": float(np.mean(counts)),
+                    "max_monthly_documents": int(np.max(counts)),
+                    "months_with_gaps": len(gaps)
+                }
+
+                monthly_counts = [
+                    {"month": pd.Timestamp(d).strftime('%Y-%m-%d'), "count": int(c)}
+                    for d, c in zip(dates, counts)
+                ]
+            else:
+                gaps = []
+                monthly_counts = []
+                stats = self._get_empty_pmsi_result()["stats"]
+
+            return {
+                "last_upload": last_upload[0][0].strftime('%Y-%m-%d %H:%M:%S') if last_upload and last_upload[0][0] else None,
+                "time_period": {
+                    "start_date": time_period[0][0].strftime('%Y-%m-%d') if time_period and time_period[0][0] else None,
+                    "end_date": time_period[0][1].strftime('%Y-%m-%d') if time_period and time_period[0][1] else None,
+                    "months_count": int(time_period[0][2]) if time_period and time_period[0][2] else 0
+                },
+                "monthly_counts": monthly_counts,
+                "gaps": [pd.Timestamp(g).strftime('%Y-%m-%d') for g in gaps],
+                "stats": stats
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting PMSI statistics: {str(e)}", exc_info=True)
+            return self._get_empty_pmsi_result()
+
+    def _get_empty_pmsi_result(self) -> Dict[str, Any]:
+        return {
+            "last_upload": None,
+            "time_period": {"start_date": None, "end_date": None, "months_count": 0},
+            "monthly_counts": [],
+            "gaps": [],
+            "stats": {
+                "total_documents": 0,
+                "avg_monthly_documents": 0,
+                "max_monthly_documents": 0,
+                "months_with_gaps": 0
+            }
+        }
 
     async def get_all_statistics_with_timing(self) -> Dict[str, Any]:
         """Version with timing information for performance monitoring"""
