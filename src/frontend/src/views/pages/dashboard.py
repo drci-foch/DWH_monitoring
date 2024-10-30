@@ -459,29 +459,42 @@ class Dashboard:
         try:
             st.header("📈 Monitoring des connecteurs")
 
-
-
             origin_codes = [
+                "ARCH_INTERNE",
                 "BIO",
                 "CYBERLAB",
-                "DOC_EXTERNE"
                 "DOC_EXTERNE_Ari",
+                "DOC_EXTERNE_Api",
+                "DOC_EXTERNE_CeS",
                 "DOC_EXTERNE_Car",
                 "DOC_EXTERNE_COP",
                 "DOC_EXTERNE_DIA",
+                "DOC_EXTERNE_ECG",
+                "DOC_EXTERNE_None",
+                "DOC_EXTERNE_Pat",
+                "DOC_EXTERNE_Res",
+                "DOC_EXTERNE_SOF",
+                "DOC_EXTERNE_SPI",
+                "DOC_EXTERNE_XPl",
+                "DOC_EXTERNE_vie",
                 "DOC_EXTERNE_Med",
                 "DOC_EXTERNE_PCA",
                 "Easily",
+                "Easily_Ari",
                 "Easily_Car",
                 "Easily_CeS",
                 "Easily_COP",
                 "Easily_DIA",
                 "Easily_echo_cardio",
+                "Easily_Efitback",
                 "Easily_EFR",
                 "Easily_Med",
                 "Easily_Muse",
                 "Easily_Patientys",
+                "Easily_PCA",
+                "Easily_Res",
                 "Easily_SOF",
+                "Easily_Xpl",
                 "FOCH_EFR",
                 "RDV_DOCTOLIB",
             ]
