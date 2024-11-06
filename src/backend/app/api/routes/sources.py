@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.crud import DatabaseQualityChecker
 from app.dependencies import get_db_checker
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 import logging
-from functools import lru_cache
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -11,7 +10,7 @@ router = APIRouter(prefix="/api", tags=["sources"])
 
 
 class BatchDataCache:
-    def __init__(self, ttl_seconds: int = 3600):  # 1 hour default TTL
+    def __init__(self, ttl_seconds: int = 3600):  
         self.cache: Dict[str, Dict[str, Any]] = {}
         self.timestamps: Dict[str, datetime] = {}
         self.ttl = timedelta(seconds=ttl_seconds)
@@ -121,7 +120,7 @@ async def get_document_counts_by_year(
     db_checker: DatabaseQualityChecker = Depends(get_db_checker),
 ) -> List[Dict[str, Any]]:
     """Get yearly document counts for specified origin codes"""
-    logger.debug(f"Processing yearly request for origin codes: {origin_codes}")
+    logger.debug("🔎 Fetching yearly request")
     return await process_request(origin_codes, db_checker, "yearly")
 
 
@@ -131,5 +130,5 @@ async def get_recent_document_counts_by_month(
     db_checker: DatabaseQualityChecker = Depends(get_db_checker),
 ) -> List[Dict[str, Any]]:
     """Get monthly document counts for specified origin codes"""
-    logger.debug(f"Processing monthly request for origin codes: {origin_codes}")
+    logger.debug("🔎 Fetching monthly request")
     return await process_request(origin_codes, db_checker, "monthly")

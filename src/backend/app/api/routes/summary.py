@@ -18,12 +18,13 @@ async def get_summary(
 ) -> Dict[str, int]:
     """Get summary statistics using existing functions"""
     try:
-        # Execute only the needed queries concurrently
+        logger.debug("🔎 Fetching summary statistics")
         patient_counts, doc_counts, recent_counts = await asyncio.gather(
             db_checker.get_patient_counts(),
             db_checker.get_document_counts(),
             db_checker.get_recent_document_counts(),
         )
+
 
         # Calculate totals using the existing format
         total_documents = sum(
@@ -38,6 +39,7 @@ async def get_summary(
             if isinstance(item, dict) and "unique_document_count" in item
         )
 
+        logger.debug("📥 Summary statistics retrieved successfully")
         return {
             "patient_count": patient_counts.get("patient_count", 0),
             "test_patient_count": patient_counts.get("test_patient_count", 0),
@@ -48,7 +50,7 @@ async def get_summary(
         }
 
     except Exception as e:
-        logger.error(f"Error in get_summary: {str(e)}", exc_info=True)
+        logger.error(f"🛑 Error in get_summary: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="An error occurred while fetching summary statistics",

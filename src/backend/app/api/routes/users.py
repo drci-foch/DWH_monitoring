@@ -13,9 +13,9 @@ router = APIRouter(prefix="/api", tags=["users"])
 async def get_top_users(db_checker: DatabaseQualityChecker = Depends(get_db_checker)):
     """Get top users for all time"""
     try:
-        logger.debug("Fetching top users")
+        logger.debug("🔎 Fetching top users")
         top_users = await db_checker.get_top_users()
-        logger.debug(f"Retrieved top users: {top_users}")
+        logger.debug("📥 Retrieved top users")
 
         return [
             {
@@ -26,7 +26,7 @@ async def get_top_users(db_checker: DatabaseQualityChecker = Depends(get_db_chec
             for user in top_users
         ]
     except Exception as e:
-        logger.error(f"Error in get_top_users: {str(e)}", exc_info=True)
+        logger.error(f"🛑 Error in get_top_users: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="An error occurred while fetching top users"
         )
@@ -38,9 +38,9 @@ async def get_top_users_current_year(
 ):
     """Get top users for current year only"""
     try:
-        logger.debug("Fetching top users for current year")
+        logger.debug("🔎 Fetching top users for current year")
         top_users = await db_checker.get_top_users(current_year=True)
-        logger.debug(f"Retrieved top users for current year: {top_users}")
+        logger.debug("📥 Retrieved top users for current year")
 
         return [
             {
@@ -51,7 +51,7 @@ async def get_top_users_current_year(
             for user in top_users
         ]
     except Exception as e:
-        logger.error(f"Error in get_top_users_current_year: {str(e)}", exc_info=True)
+        logger.error(f"🛑 Error in get_top_users_current_year: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="An error occurred while fetching top users for current year",
@@ -64,12 +64,15 @@ async def get_users_statistics(
 ):
     """Get extended user statistics."""
     try:
+        logger.debug("🔎 Fetching extended statistics for users")
         stats = await db_checker.get_users_stats(current_year)
+        logger.debug("📥 Retrieved users statistics")
+
         if not stats:
             raise HTTPException(status_code=404, detail="No user statistics found")
         return stats
     except Exception as e:
-        logger.error(f"Error getting user statistics: {str(e)}", exc_info=True)
+        logger.error(f"🛑 Error getting user statistics: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="An error occurred while fetching user statistics"

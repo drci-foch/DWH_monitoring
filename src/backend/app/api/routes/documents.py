@@ -15,19 +15,20 @@ async def get_document_metrics(
 ):
     """Get document metrics"""
     try:
-        logger.debug("Fetching document metrics")
+        logger.debug("🔎 Fetching document metrics")
         metrics = await db_checker.get_document_metrics()
 
         if not metrics:
-            logger.warning("No document metrics found")
+            logger.warning("🛑 No document metrics found")
             raise HTTPException(status_code=404, detail="Document metrics not found")
 
+        logger.debug("📥 Metrics retrieved successfully")
         return metrics
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching document metrics: {str(e)}", exc_info=True)
+        logger.error(f"🛑 Error fetching document metrics: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="An error occurred while fetching document metrics"
         )
@@ -39,12 +40,14 @@ async def get_document_counts(
 ):
     """Get document counts"""
     try:
-        logger.debug("Fetching document counts")
+        logger.debug("🔎 Fetching document counts")
         counts = await db_checker.get_document_counts()
+        logger.debug("📥 Document counts retrieved successfully")
+
         return counts
 
     except Exception as e:
-        logger.error(f"Error fetching document counts: {str(e)}", exc_info=True)
+        logger.error(f"🛑 Error fetching document counts: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="An error occurred while fetching document counts"
         )
@@ -56,12 +59,13 @@ async def get_recent_document_counts(
 ):
     """Get recent document counts"""
     try:
-        logger.debug("Fetching recent document counts")
+        logger.debug("🔎 Fetching recent document counts")
         counts = await db_checker.get_recent_document_counts()
+        logger.debug("📥 Recent document counts retrieved successfully")
         return counts
 
     except Exception as e:
-        logger.error(f"Error fetching recent document counts: {str(e)}", exc_info=True)
+        logger.error(f"🛑 Error fetching recent document counts: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="An error occurred while fetching recent document counts",

@@ -33,12 +33,12 @@ async def get_archive_status(
     - Breakdown of documents to suppress by origin
     """
     try:
-        logger.debug("Fetching archive status")
+        logger.debug("🔎 Fetching archive status")
 
         archive_status = await db_checker.get_archive_status()
 
         if not archive_status:
-            logger.warning("No archive status data found")
+            logger.warning("🛑 No archive status data found")
             raise HTTPException(
                 status_code=404, detail="No archive status data available"
             )
@@ -52,18 +52,18 @@ async def get_archive_status(
                 "documents_to_suppress",
             ]
         ):
-            logger.error("Invalid archive status data structure")
+            logger.error("🛑 Invalid archive status data structure")
             raise HTTPException(
                 status_code=500, detail="Invalid archive status data structure"
             )
 
-        logger.debug(f"Archive status retrieved successfully: {archive_status}")
+        logger.debug("📥 Archive status retrieved successfully")
         return archive_status
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching archive status: {str(e)}", exc_info=True)
+        logger.error(f"🛑 Error fetching archive status: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="An error occurred while fetching archive status"
         )
