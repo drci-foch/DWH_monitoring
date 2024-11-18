@@ -8,11 +8,16 @@ Last Updated: 2024-10-28
 - [/] In Progress
 - [x] Done
 
+
+
 ## API DEVELOPEMENTS
 - [x] Develop FrontEnd 
 - [x] Test and debug Frontend on real data
 - [x] Test Optimized CRUD :: crud_to_test.py
 - [x] Test cache for sources MONITORING
+- [x] Change FLEUR query to be "contains FLEUR", same for INSECTE and TEST
+
+
 
 ## PMSI TAB
 - [x] Date of last upload
