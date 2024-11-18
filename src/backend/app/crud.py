@@ -8,6 +8,7 @@ from functools import lru_cache, wraps
 from sqlalchemy import text
 from typing import Dict, List, Any, Set, Tuple
 import multiprocessing as mp
+import re 
 
 import numpy as np
 from dateutil.relativedelta import relativedelta
@@ -153,37 +154,60 @@ class DatabaseQualityChecker:
 
     @ttl_cache(ttl_seconds=3600)  # Cache for 1 hour
     async def get_patient_counts(self) -> Dict[str, int]:
-        """Optimized patient count query with Python-side aggregation"""
+        """
+        Optimized patient count query with Python-side aggregation.
+        Now filters records like SQL does before processing.
+        """
         query = """
         SELECT DISTINCT
             d.PATIENT_NUM,
             p.LASTNAME
-        FROM 
-            DWH.DWH_DOCUMENT d, DWH.DWH_PATIENT p
-        WHERE 
-            d.PATIENT_NUM = p.PATIENT_NUM
+        FROM
+            DWH.DWH_DOCUMENT d
+            JOIN DWH.DWH_PATIENT p ON d.PATIENT_NUM = p.PATIENT_NUM
         """
-
+        
         try:
             results = await self.execute_query(query)
-
-            # Initialize counters
-            counts = defaultdict(int)
-            total_count = 0
-
-            # Single pass through results to count everything
-            for _, lastname in results:
-                total_count += 1
-                if lastname in ("TEST", "INSECTE", "FLEUR"):
-                    counts[lastname] += 1
-
-            return {
-                "patient_count": total_count,
-                "test_patient_count": counts["TEST"],
-                "celebrity_patient_count": counts["INSECTE"],
-                "research_patient_count": counts["FLEUR"],
+            
+            # Use sets to count unique patients
+            patient_sets = {
+                "TEST": set(),
+                "INSECTE": set(),
+                "FLEUR": set()
             }
-
+            total_patients = set()
+            
+            # Compile regex patterns to match SQL exactly
+            exact_pattern = re.compile(r'(INSECTE|TEST|FLEUR)$')
+            suffix_pattern = re.compile(r'(TEST|FLEUR)( .*|[0-9].*|-[A-Z0-9].*|EASILY|PARTO[0-9])$')
+            
+            for patient_num, lastname in results:
+                if lastname:
+                    lastname = lastname.rstrip('\n\r\t').lstrip()
+                    total_patients.add(patient_num)
+                    
+                    # First check exact matches
+                    trimmed_name = lastname.rstrip()
+                    if exact_pattern.match(trimmed_name):
+                        match_word = trimmed_name
+                        patient_sets[match_word].add(patient_num)
+                        continue
+                    
+                    # Then check suffix matches
+                    if suffix_pattern.match(trimmed_name):
+                        match = re.match(r'(INSECTE|TEST|FLEUR)', trimmed_name)
+                        if match:
+                            match_word = match.group(1)
+                            patient_sets[match_word].add(patient_num)
+            
+            return {
+                "patient_count": len(total_patients),
+                "test_patient_count": len(patient_sets["TEST"]),
+                "celebrity_patient_count": len(patient_sets["FLEUR"]),  # Should now be 3
+                "research_patient_count": len(patient_sets["INSECTE"]),
+            }
+            
         except Exception as e:
             logger.error(f"Error getting patient counts: {str(e)}", exc_info=True)
             return {
