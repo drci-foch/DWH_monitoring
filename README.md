@@ -1,7 +1,5 @@
 # DWH Monitoring Dashboard
 
-## Project Overview
-
 This project is a comprehensive monitoring dashboard for a Data Warehouse (DWH) database. It provides various metrics and visualizations to help monitor database health, usage patterns, and data quality.
 
 ## Features
